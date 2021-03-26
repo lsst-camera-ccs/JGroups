@@ -60,6 +60,10 @@ public abstract class Protocol {
 
     protected final Log        log=LogFactory.getLog(this.getClass());
 
+    // CCS begin
+    static public final boolean ccs_physical = System.getProperty("jg.physical") != null;
+    static public final boolean ccs_connect = System.getProperty("jg.connect") != null;
+    // CCS begin
 
 
 

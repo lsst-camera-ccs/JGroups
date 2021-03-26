@@ -1190,6 +1190,28 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
                 break;
 
             case Event.GET_PHYSICAL_ADDRESS:
+                
+                // CCS begin
+                if (ccs_physical) {
+                    StringBuilder sb = new StringBuilder("CCS> TP.Event.GET_PHYSICAL_ADDRESS: ");
+
+                    Address addr = evt.getArg();
+                    sb.append("Logical=").append(addr).append(", ");
+                    PhysicalAddress physical_addr = getPhysicalAddressFromCache(addr);
+                    if (physical_addr != null) {
+                        sb.append("from cache, ").append(physical_addr).append(" ");
+                    } else if (Objects.equals(addr, local_addr)) {
+                        physical_addr = getPhysicalAddress();
+                        if (physical_addr != null) {
+                            addPhysicalAddressToCache(addr, physical_addr);
+                        }
+                        sb.append("from socket, ");
+                    }
+                    log.info(sb.append("Physical: ").append(physical_addr).toString());
+                    return physical_addr;
+                }
+                // CCS end
+                
                 Address addr=evt.getArg();
                 PhysicalAddress physical_addr=getPhysicalAddressFromCache(addr);
                 if(physical_addr != null)
@@ -1609,12 +1631,22 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
     protected void sendToSingleMember(final Address dest, byte[] buf, int offset, int length) throws Exception {
         if(dest instanceof PhysicalAddress) {
             sendUnicast((PhysicalAddress)dest, buf, offset, length);
+            // CCS begin
+            if (ccs_physical || ccs_connect) {
+                log.info("CCS> TP: sendToSingleMember by physical "+ dest);
+            } 
+            // CCS end
             return;
         }
 
         PhysicalAddress physical_dest;
         if((physical_dest=getPhysicalAddressFromCache(dest)) != null) {
             sendUnicast(physical_dest,buf,offset,length);
+            // CCS begin
+            if (ccs_physical || ccs_connect) {
+                log.info("CCS> TP: sendToSingleMember "+ dest +", phycical from cache: "+ physical_dest);
+            } 
+            // CCS end
             return;
         }
 
@@ -1626,6 +1658,11 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
                     if(data.getAddress() != null && data.getAddress().equals(dest)) {
                         if((physical_dest=data.getPhysicalAddr()) != null) {
                             sendUnicast(physical_dest, buf, offset, length);
+                            // CCS begin
+                            if (ccs_physical || ccs_connect) {
+                                log.info("CCS> TP: sendToSingleMember " + dest + ", phycical from discover: " + physical_dest);
+                            }
+                            // CCS end
                             return;
                         }
                     }
@@ -1636,6 +1673,13 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
                 responses.done();
             }
         }
+        
+        // CCS begin
+        if (ccs_physical || ccs_connect) {
+            log.info("CCS> TP: sendToSingleMember " + dest + ", no physical.");
+        }
+        // CCS end
+        
     }
 
 
