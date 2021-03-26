@@ -437,6 +437,30 @@ public class UDP extends TP {
 
 
     protected IpAddress createLocalAddress() {
+        
+        // CCS begin
+        if (ccs_physical) {
+            StringBuilder sb = new StringBuilder("CCS> UDP.createLocalAddress: ");
+            sb.append("[sock: ").append(sock);
+            if (sock != null) {
+                if (sock.isClosed()) {
+                    sb.append(" ").append("closed");
+                } else {
+                    sb.append(" ").append(sock.getLocalAddress()).append(":").append(sock.getLocalPort());
+                }
+                
+            }
+            sb.append("] ");
+            if (external_addr != null) {
+                sb.append("external_addr=").append(external_addr).append(" ");
+            }
+            if (external_port != 0) {
+                sb.append("external_port=").append(external_port).append(" ");
+            }
+            log.info(sb.toString());
+        }
+        // CCS end
+
         if(sock == null || sock.isClosed())
             return null;
         if(external_addr != null) {

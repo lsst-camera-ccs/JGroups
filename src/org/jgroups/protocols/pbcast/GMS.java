@@ -877,12 +877,22 @@ public class GMS extends Protocol implements DiagnosticsHandler.ProbeHandler {
 
         switch(hdr.type) {
             case GmsHeader.JOIN_REQ:
+                // CCS begin
+                if (Protocol.ccs_connect) {
+                    log.info("CCS> GMS: received JOIN_REQ from " + hdr.mbr);
+                }
+                // CCS end
                 view_handler.add(new Request(Request.JOIN, hdr.mbr, null, hdr.useFlushIfPresent));
                 break;
             case GmsHeader.JOIN_REQ_WITH_STATE_TRANSFER:
                 view_handler.add(new Request(Request.JOIN_WITH_STATE_TRANSFER, hdr.mbr, null, hdr.useFlushIfPresent));
                 break;
             case GmsHeader.JOIN_RSP:
+                // CCS begin
+                if (Protocol.ccs_connect) {
+                    log.info("CCS> GMS: received JOIN_RSP from " + hdr.mbr);
+                }
+                // CCS end
                 JoinRsp join_rsp=readJoinRsp(msg.getRawBuffer(), msg.getOffset(), msg.getLength());
                 if(join_rsp != null)
                     impl.handleJoinResponse(join_rsp);
@@ -1045,6 +1055,12 @@ public class GMS extends Protocol implements DiagnosticsHandler.ProbeHandler {
                 boolean state_transfer=type == Event.CONNECT_WITH_STATE_TRANSFER
                         || type == Event.CONNECT_WITH_STATE_TRANSFER_USE_FLUSH;
 
+                // CCS begin
+                if (ccs_connect) {
+                    log.info("CCS> GMS.Event.CONNECT_USE_FLUSH");
+                }
+                // CCS begin
+
                 if(print_local_addr) {
                     PhysicalAddress physical_addr=print_physical_addrs?
                             (PhysicalAddress)down(new Event(Event.GET_PHYSICAL_ADDRESS, local_addr)) : null;
@@ -1065,10 +1081,16 @@ public class GMS extends Protocol implements DiagnosticsHandler.ProbeHandler {
                 if(local_addr == null)
                     throw new IllegalStateException("local_addr is null");
 
-                if(state_transfer)
+                if (state_transfer) {
                     impl.joinWithStateTransfer(local_addr, use_flush);
-                else
+                } else {
+                    // CCS begin
+                    if (ccs_connect) {
+                        log.info("CCS> GMS: "+ impl.getClass().getSimpleName() +".join(" + local_addr +")");
+                    }
+                    // CCS begin
                     impl.join(local_addr, use_flush);
+                }
                 return null;  // don't pass down: event has already been passed down
 
             case Event.DISCONNECT:

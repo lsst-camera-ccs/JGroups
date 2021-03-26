@@ -31,7 +31,7 @@ public class PING extends Discovery {
             sendDiscoveryRequest(cluster_name, members, initial_discovery);
         }
         catch(InterruptedIOException | InterruptedException ie) {
-            ;
+            log.warn(String.format("%s: failed sending discovery request", local_addr), ie);
         }
         catch(Throwable ex) {
             log.error(String.format("%s: failed sending discovery request", local_addr), ex);
@@ -40,16 +40,36 @@ public class PING extends Discovery {
 
 
     protected void sendDiscoveryRequest(String cluster_name, List<Address> members_to_find, boolean initial_discovery) throws Exception {
+        
+        // CCS begin
+        StringBuilder sb = new StringBuilder();
+        if (ccs_physical || ccs_connect) {
+            sb.append("CCS> PING.sendDiscoveryRequest: cluster=").append(cluster_name).append(", initial_discovery=").append(initial_discovery);
+
+        }
+        // CCS begin
+        
         PingData data=null;
 
         if(!use_ip_addrs || !initial_discovery) {
             PhysicalAddress physical_addr=(PhysicalAddress)down(new Event(Event.GET_PHYSICAL_ADDRESS, local_addr));
+            // CCS begin
+            if (ccs_physical || ccs_connect) {
+                sb.append(", physical=").append(physical_addr);
+            } 
+            // CCS end
 
             // https://issues.jboss.org/browse/JGRP-1670
             data=new PingData(local_addr, false, NameCache.get(local_addr), physical_addr);
             if(members_to_find != null && members_to_find.size() <= max_members_in_discovery_request)
                 data.mbrs(members_to_find);
         }
+        
+        // CCS begin
+        if (ccs_physical || ccs_connect) {
+            log.info(sb.toString());
+        }
+        // CCS begin
 
         // message needs to have DONT_BUNDLE flag: if A sends message M to B, and we need to fetch B's physical
         // address, then the bundler thread blocks until the discovery request has returned. However, we cannot send

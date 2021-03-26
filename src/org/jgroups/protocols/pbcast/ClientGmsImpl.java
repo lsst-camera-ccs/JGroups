@@ -12,6 +12,7 @@ import org.jgroups.util.Responses;
 import org.jgroups.util.Util;
 
 import java.util.*;
+import org.jgroups.stack.Protocol;
 
 
 /**
@@ -63,8 +64,14 @@ public class ClientGmsImpl extends GmsImpl {
         Responses responses=null; // caches responses from all discovery runs (usually there's only 1 run)
         try {
             while(!gms.isLeaving()) {
-                if(installViewIfValidJoinRsp(join_promise, false))
+                if (installViewIfValidJoinRsp(join_promise, false)) {
+                    // CCS begin
+                    if (Protocol.ccs_connect) {
+                        log.info("CCS> ClientGmsImpl: installViewIfValidJoinRsp(...) 1");
+                    }
+                    // CCS end
                     return;
+                }
 
                 long start=System.currentTimeMillis();
                 if(responses == null)
@@ -76,10 +83,29 @@ public class ClientGmsImpl extends GmsImpl {
                         tmp.done();
                     }
                 }
+                // CCS begin
+                if (Protocol.ccs_connect) {
+                    StringBuilder sb = new StringBuilder("CCS> ClientGmsImpl: Responses: ").append(responses);
+                    if (responses != null) {
+                        sb.append(" [");
+                        for (PingData pd : responses) {
+                            sb.append(pd.getLogicalName()).append(":").append(pd.getPhysicalAddr()).append(",");
+                        }
+                        sb.append("]");
+                    }
+                    log.info(sb.toString());
+                }
+                // CCS end
 
                 // Sept 2008 (bela): return if we got a belated JoinRsp (https://jira.jboss.org/jira/browse/JGRP-687)
-                if(installViewIfValidJoinRsp(join_promise, false))
+                if (installViewIfValidJoinRsp(join_promise, false)) {
+                    // CCS begin
+                    if (Protocol.ccs_connect) {
+                        log.info("CCS> ClientGmsImpl: installViewIfValidJoinRsp(...) 2");
+                    }
+                    // CCS end
                     return;
+                }
 
                 responses.waitFor(gms.join_timeout);
                 long diff=System.currentTimeMillis() - start;
@@ -108,8 +134,14 @@ public class ClientGmsImpl extends GmsImpl {
                     for(Address coord : coords) {
                         log.debug("%s: sending JOIN(%s) to %s", gms.local_addr, mbr, coord);
                         sendJoinMessage(coord, mbr, joinWithStateTransfer, useFlushIfPresent);
-                        if(installViewIfValidJoinRsp(join_promise, true))
+                        if (installViewIfValidJoinRsp(join_promise, true)) {
+                            // CCS begin
+                            if (Protocol.ccs_connect) {
+                                log.info("CCS> ClientGmsImpl: installViewIfValidJoinRsp(...) 3");
+                            }
+                            // CCS end
                             return;
+                        }
                         log.warn("%s: JOIN(%s) sent to %s timed out (after %d ms), on try %d",
                                  gms.local_addr, mbr, coord, gms.join_timeout, join_attempts);
                     }
@@ -223,6 +255,11 @@ public class ClientGmsImpl extends GmsImpl {
 
 
     void sendJoinMessage(Address coord, Address mbr,boolean joinWithTransfer, boolean useFlushIfPresent) {
+        // CCS begin
+        if (Protocol.ccs_connect) {
+            log.info("CCS> ClientGmsImpl: sendJoinMessage from "+ mbr +" to "+ coord);
+        }
+        // CCS end
         byte type=joinWithTransfer? GMS.GmsHeader.JOIN_REQ_WITH_STATE_TRANSFER : GMS.GmsHeader.JOIN_REQ;
         GMS.GmsHeader hdr=new GMS.GmsHeader(type, mbr, useFlushIfPresent);
         Message msg=new Message(coord).setFlag(Message.Flag.OOB, Message.Flag.INTERNAL).putHeader(gms.getId(), hdr);
