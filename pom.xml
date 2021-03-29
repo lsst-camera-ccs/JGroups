@@ -206,11 +206,11 @@
                 </executions>
                 <configuration>
                     <rules>
-                        <bannedRepositories>
+<!--                        <bannedRepositories>
                             <level>${insecure.repositories}</level>
                             <bannedRepositories>http://*</bannedRepositories>
                             <bannedPluginRepositories>http://*</bannedPluginRepositories>
-                        </bannedRepositories>
+                        </bannedRepositories>-->
                         <requireJavaVersion>
                             <!-- require Java 8 or higher -->
                             <version>[1.8,)</version>
