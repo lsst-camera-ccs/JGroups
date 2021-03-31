@@ -67,7 +67,7 @@ public class ClientGmsImpl extends GmsImpl {
                 if (installViewIfValidJoinRsp(join_promise, false)) {
                     // CCS begin
                     if (Protocol.ccs_connect) {
-                        log.info("CCS> ClientGmsImpl: installViewIfValidJoinRsp(...) 1");
+                        log.debug("CCS> ClientGmsImpl: installViewIfValidJoinRsp(...) 1");
                     }
                     // CCS end
                     return;
@@ -93,7 +93,7 @@ public class ClientGmsImpl extends GmsImpl {
                         }
                         sb.append("]");
                     }
-                    log.info(sb.toString());
+                    log.debug(sb.toString());
                 }
                 // CCS end
 
@@ -101,7 +101,7 @@ public class ClientGmsImpl extends GmsImpl {
                 if (installViewIfValidJoinRsp(join_promise, false)) {
                     // CCS begin
                     if (Protocol.ccs_connect) {
-                        log.info("CCS> ClientGmsImpl: installViewIfValidJoinRsp(...) 2");
+                        log.debug("CCS> ClientGmsImpl: installViewIfValidJoinRsp(...) 2");
                     }
                     // CCS end
                     return;
@@ -137,7 +137,7 @@ public class ClientGmsImpl extends GmsImpl {
                         if (installViewIfValidJoinRsp(join_promise, true)) {
                             // CCS begin
                             if (Protocol.ccs_connect) {
-                                log.info("CCS> ClientGmsImpl: installViewIfValidJoinRsp(...) 3");
+                                log.debug("CCS> ClientGmsImpl: installViewIfValidJoinRsp(...) 3");
                             }
                             // CCS end
                             return;
@@ -257,7 +257,7 @@ public class ClientGmsImpl extends GmsImpl {
     void sendJoinMessage(Address coord, Address mbr,boolean joinWithTransfer, boolean useFlushIfPresent) {
         // CCS begin
         if (Protocol.ccs_connect) {
-            log.info("CCS> ClientGmsImpl: sendJoinMessage from "+ mbr +" to "+ coord);
+            log.debug("CCS> ClientGmsImpl: sendJoinMessage from "+ mbr +" to "+ coord);
         }
         // CCS end
         byte type=joinWithTransfer? GMS.GmsHeader.JOIN_REQ_WITH_STATE_TRANSFER : GMS.GmsHeader.JOIN_REQ;

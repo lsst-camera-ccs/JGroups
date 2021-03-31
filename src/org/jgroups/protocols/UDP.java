@@ -457,7 +457,7 @@ public class UDP extends TP {
             if (external_port != 0) {
                 sb.append("external_port=").append(external_port).append(" ");
             }
-            log.info(sb.toString());
+            log.debug(sb.toString());
         }
         // CCS end
 

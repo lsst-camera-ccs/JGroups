@@ -1207,7 +1207,7 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
                         }
                         sb.append("from socket, ");
                     }
-                    log.info(sb.append("Physical: ").append(physical_addr).toString());
+                    log.debug(sb.append("Physical: ").append(physical_addr).toString());
                     return physical_addr;
                 }
                 // CCS end
@@ -1633,7 +1633,7 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
             sendUnicast((PhysicalAddress)dest, buf, offset, length);
             // CCS begin
             if (ccs_physical || ccs_connect) {
-                log.info("CCS> TP: sendToSingleMember by physical "+ dest);
+                log.debug("CCS> TP: sendToSingleMember by physical "+ dest);
             } 
             // CCS end
             return;
@@ -1644,7 +1644,7 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
             sendUnicast(physical_dest,buf,offset,length);
             // CCS begin
             if (ccs_physical || ccs_connect) {
-                log.info("CCS> TP: sendToSingleMember "+ dest +", phycical from cache: "+ physical_dest);
+                log.debug("CCS> TP: sendToSingleMember "+ dest +", phycical from cache: "+ physical_dest);
             } 
             // CCS end
             return;
@@ -1660,7 +1660,7 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
                             sendUnicast(physical_dest, buf, offset, length);
                             // CCS begin
                             if (ccs_physical || ccs_connect) {
-                                log.info("CCS> TP: sendToSingleMember " + dest + ", phycical from discover: " + physical_dest);
+                                log.debug("CCS> TP: sendToSingleMember " + dest + ", phycical from discover: " + physical_dest);
                             }
                             // CCS end
                             return;
@@ -1676,7 +1676,7 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
         
         // CCS begin
         if (ccs_physical || ccs_connect) {
-            log.info("CCS> TP: sendToSingleMember " + dest + ", no physical.");
+            log.debug("CCS> TP: sendToSingleMember " + dest + ", no physical.");
         }
         // CCS end
         

@@ -67,7 +67,7 @@ public class PING extends Discovery {
         
         // CCS begin
         if (ccs_physical || ccs_connect) {
-            log.info(sb.toString());
+            log.debug(sb.toString());
         }
         // CCS begin
 

@@ -879,7 +879,7 @@ public class GMS extends Protocol implements DiagnosticsHandler.ProbeHandler {
             case GmsHeader.JOIN_REQ:
                 // CCS begin
                 if (Protocol.ccs_connect) {
-                    log.info("CCS> GMS: received JOIN_REQ from " + hdr.mbr);
+                    log.debug("CCS> GMS: received JOIN_REQ from " + hdr.mbr);
                 }
                 // CCS end
                 view_handler.add(new Request(Request.JOIN, hdr.mbr, null, hdr.useFlushIfPresent));
@@ -890,7 +890,7 @@ public class GMS extends Protocol implements DiagnosticsHandler.ProbeHandler {
             case GmsHeader.JOIN_RSP:
                 // CCS begin
                 if (Protocol.ccs_connect) {
-                    log.info("CCS> GMS: received JOIN_RSP from " + hdr.mbr);
+                    log.debug("CCS> GMS: received JOIN_RSP from " + hdr.mbr);
                 }
                 // CCS end
                 JoinRsp join_rsp=readJoinRsp(msg.getRawBuffer(), msg.getOffset(), msg.getLength());
@@ -1057,7 +1057,7 @@ public class GMS extends Protocol implements DiagnosticsHandler.ProbeHandler {
 
                 // CCS begin
                 if (ccs_connect) {
-                    log.info("CCS> GMS.Event.CONNECT_USE_FLUSH");
+                    log.debug("CCS> GMS.Event.CONNECT_USE_FLUSH");
                 }
                 // CCS begin
 
@@ -1086,7 +1086,7 @@ public class GMS extends Protocol implements DiagnosticsHandler.ProbeHandler {
                 } else {
                     // CCS begin
                     if (ccs_connect) {
-                        log.info("CCS> GMS: "+ impl.getClass().getSimpleName() +".join(" + local_addr +")");
+                        log.debug("CCS> GMS: "+ impl.getClass().getSimpleName() +".join(" + local_addr +")");
                     }
                     // CCS begin
                     impl.join(local_addr, use_flush);
