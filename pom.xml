@@ -1,4 +1,13 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+
+    <parent>
+        <groupId>org.lsst</groupId>
+        <artifactId>org-lsst-ccs-parent</artifactId>
+        <version>3.0.12</version>
+        <relativePath />
+    </parent>
+
+
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.jgroups</groupId>
     <artifactId>jgroups</artifactId>
@@ -64,6 +73,12 @@
     </prerequisites>
 
     <repositories>
+        <repository>
+            <id>lsst-maven2-public</id>
+            <name>LSST Maven 2 central repository</name>
+            <url>https://repo-nexus.lsst.org/nexus/content/groups/ccs-maven2-public/</url>
+        </repository>
+
         <repository>
             <id>jboss-public-repository-group</id>
             <name>JBoss Public Maven Repository Group</name>
@@ -168,17 +183,19 @@
             </resource>
         </resources>
         <plugins>
+            <!--
             <plugin>
                 <groupId>org.sonatype.plugins</groupId>
                 <artifactId>nexus-staging-maven-plugin</artifactId>
                 <extensions>true</extensions>
                 <configuration>
-                    <!-- See configuration details at http://books.sonatype.com/nexus-book/reference/staging-deployment.html -->
+        -->
+                    <!-- See configuration details at http://books.sonatype.com/nexus-book/reference/staging-deployment.html 
                     <nexusUrl>${nexus.server.url}</nexusUrl>
                     <serverId>${nexus.server.id}</serverId>
                     <autoReleaseAfterClose>true</autoReleaseAfterClose>
                 </configuration>
-            </plugin>
+            </plugin>-->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
