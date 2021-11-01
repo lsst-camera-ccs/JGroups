@@ -611,7 +611,6 @@ public class UNICAST3 extends Protocol implements AgeOutCache.Handler<Address> {
             msg.src(local_addr); // this needs to be done so we can check whether the message sender is the local_addr
 
         SenderEntry entry=getSenderEntry(dst);
-
         boolean dont_loopback_set=msg.isTransientFlagSet(Message.TransientFlag.DONT_LOOPBACK)
           && dst.equals(local_addr);
         short send_conn_id=entry.connId();
@@ -820,7 +819,7 @@ public class UNICAST3 extends Protocol implements AgeOutCache.Handler<Address> {
     protected void processInternalMessage(final Table<Message> win, final Address sender) {
         // If there are other msgs, tell the regular thread pool to handle them (https://issues.jboss.org/browse/JGRP-1732)
         if(!win.isEmpty() && win.getAdders().get() == 0) // just a quick&dirty check, can also be incorrect
-            getTransport().submitToThreadPool(() -> removeAndDeliver(win, sender), true);
+            getTransport().submitToThreadPool(() -> removeAndDeliver(win, sender), false);
     }
 
 

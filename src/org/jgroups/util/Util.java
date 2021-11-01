@@ -20,11 +20,10 @@ import org.jgroups.stack.ProtocolStack;
 
 import javax.management.MBeanServer;
 import javax.management.MBeanServerFactory;
+
 import java.io.*;
 import java.lang.annotation.Annotation;
-import java.lang.management.ManagementFactory;
-import java.lang.management.ThreadInfo;
-import java.lang.management.ThreadMXBean;
+import java.lang.management.*;
 import java.lang.reflect.*;
 import java.net.*;
 import java.nio.ByteBuffer;
@@ -2181,40 +2180,65 @@ public class Util {
 
 
     public static String dumpThreads() {
-        StringBuilder sb=new StringBuilder();
         ThreadMXBean bean=ManagementFactory.getThreadMXBean();
-        long[] ids=bean.getAllThreadIds();
-        _printThreads(bean,ids,sb);
-        long[] deadlocks=bean.findDeadlockedThreads();
-        if(deadlocks != null && deadlocks.length > 0) {
-            sb.append("deadlocked threads:\n");
-            _printThreads(bean,deadlocks,sb);
-        }
+        ThreadInfo[] threads=bean.dumpAllThreads(true, true);
+        return Stream.of(threads).map(Util::dumpThreadInfo).collect(Collectors.joining("\n"));
+    }
 
-        deadlocks=bean.findMonitorDeadlockedThreads();
-        if(deadlocks != null && deadlocks.length > 0) {
-            sb.append("monitor deadlocked threads:\n");
-            _printThreads(bean,deadlocks,sb);
+
+    private static String dumpThreadInfo(ThreadInfo thread) { // copied from Infinispan
+        StringBuilder sb=new StringBuilder(String.format("\"%s\" #%s prio=0 tid=0x%x nid=NA %s%n", thread.getThreadName(), thread.getThreadId(),
+                                                         thread.getThreadId(), thread.getThreadState().toString().toLowerCase()));
+        sb.append(String.format("   java.lang.Thread.State: %s%n", thread.getThreadState()));
+        LockInfo blockedLock = thread.getLockInfo();
+        StackTraceElement[] s = thread.getStackTrace();
+        MonitorInfo[] monitors = thread.getLockedMonitors();
+        for (int i = 0; i < s.length; i++) {
+            StackTraceElement ste = s[i];
+            sb.append(String.format("\tat %s\n", ste));
+            if (i == 0 && blockedLock != null) {
+                boolean parking = ste.isNativeMethod() && ste.getMethodName().equals("park");
+                sb.append(String.format("\t- %s <0x%x> (a %s)%n", blockedState(thread, blockedLock, parking),
+                                        blockedLock.getIdentityHashCode(), blockedLock.getClassName()));
+            }
+            if (monitors != null) {
+                for (MonitorInfo monitor : monitors) {
+                    if (monitor.getLockedStackDepth() == i) {
+                        sb.append(String.format("\t- locked <0x%x> (a %s)%n", monitor.getIdentityHashCode(), monitor.getClassName()));
+                    }
+                }
+            }
+        }
+        sb.append('\n');
+
+        LockInfo[] synchronizers = thread.getLockedSynchronizers();
+        if (synchronizers != null && synchronizers.length > 0) {
+            sb.append("\n   Locked ownable synchronizers:\n");
+            for (LockInfo synchronizer : synchronizers) {
+                sb.append(String.format("\t- <0x%x> (a %s)%n", synchronizer.getIdentityHashCode(), synchronizer.getClassName()));
+            }
+            sb.append('\n');
         }
         return sb.toString();
     }
 
 
-    protected static void _printThreads(ThreadMXBean bean,long[] ids,StringBuilder sb) {
-        ThreadInfo[] threads=bean.getThreadInfo(ids,20);
-        for(ThreadInfo info : threads) {
-            if(info == null)
-                continue;
-            sb.append(info.getThreadName()).append(":\n");
-            StackTraceElement[] stack_trace=info.getStackTrace();
-            for(StackTraceElement el : stack_trace) {
-                sb.append("    at ").append(el.getClassName()).append(".").append(el.getMethodName());
-                sb.append("(").append(el.getFileName()).append(":").append(el.getLineNumber()).append(")");
-                sb.append("\n");
+    private static String blockedState(ThreadInfo thread, LockInfo blockedLock, boolean parking) {
+        String state;
+        if (blockedLock != null) {
+            if (thread.getThreadState() == Thread.State.BLOCKED) {
+                state = "waiting to lock";
+            } else if (parking) {
+                state = "parking to wait for";
+            } else {
+                state = "waiting on";
             }
-            sb.append("\n\n");
+        } else {
+            state = null;
         }
+        return state;
     }
+
 
 
     public static boolean interruptAndWaitToDie(Thread t) {
@@ -3165,6 +3189,30 @@ public class Util {
         }
     }
 
+    static ClassLoader[] getClassLoaders(ClassLoader appClassLoader) {
+        return new ClassLoader[]{
+              appClassLoader,   // User defined classes
+              Util.class.getClassLoader(),           // JGroups classes (not always on TCCL [modular env])
+              ClassLoader.getSystemClassLoader(),    // Used when load time instrumentation is in effect
+              Thread.currentThread().getContextClassLoader() //Used by jboss-as stuff
+        };
+    }
+
+    public static InputStream getResourceAsStream(String resourcePath, ClassLoader userClassLoader) {
+        if (resourcePath.startsWith("/")) {
+            resourcePath = resourcePath.substring(1);
+        }
+        InputStream is = null;
+        for (ClassLoader cl : getClassLoaders(userClassLoader)) {
+            if (cl != null) {
+                is = cl.getResourceAsStream(resourcePath);
+                if (is != null) {
+                    break;
+                }
+            }
+        }
+        return is;
+    }
 
     public static InputStream getResourceAsStream(String name,Class clazz) {
         ClassLoader loader;
@@ -3324,6 +3372,40 @@ public class Util {
         return new LinkedList<>(retval);
     }
 
+    /**
+     * Parses a string into a list of IpAddresses
+     * @param list The list to which to add parsed elements
+     * @param hosts The string with host:port pairs
+     * @param unresolved_hosts A list of unresolved hosts
+     * @param port_range The port range to consider
+     * @return True if all hostnames resolved fine, false otherwise
+     */
+    public static boolean parseCommaDelimitedHostsInto(final Collection<PhysicalAddress> list,
+                                                       final Collection<String> unresolved_hosts,
+                                                       String hosts,int port_range) {
+        StringTokenizer tok=hosts != null? new StringTokenizer(hosts,",") : null;
+        boolean all_resolved=true;
+        while(tok != null && tok.hasMoreTokens()) {
+            String t=tok.nextToken().trim();
+            String host=t.substring(0,t.indexOf('['));
+            host=host.trim();
+            int port=Integer.parseInt(t.substring(t.indexOf('[') + 1,t.indexOf(']')));
+            try {
+                InetAddress[] resolvedAddresses=InetAddress.getAllByName(host);
+                for(int i=0; i < resolvedAddresses.length; i++) {
+                    for(int p=port; p <= port + port_range; p++) {
+                        IpAddress addr=new IpAddress(resolvedAddresses[i], p);
+                        list.add(addr);
+                    }
+                }
+            }
+            catch(UnknownHostException ex) {
+                all_resolved=false;
+                unresolved_hosts.add(host);
+            }
+        }
+        return all_resolved;
+    }
 
     /**
      * Input is "daddy[8880],sindhu[8880],camille[5555]. Return List of
@@ -3590,13 +3672,9 @@ public class Util {
     }
 
     public static ServerSocket createServerSocket(SocketFactory factory, String service_name, InetAddress bind_addr, int start_port) {
-        ServerSocket ret=null;
         try {
-            ret=factory.createServerSocket(service_name);
-            Util.bind(ret, bind_addr, start_port, start_port+1000, 50);
-            return ret;
-        }
-        catch(Exception e) {
+            return createServerSocket(factory, service_name, bind_addr, start_port, start_port+1000);
+        } catch (Exception e) {
             return null;
         }
     }
@@ -3609,11 +3687,9 @@ public class Util {
 
         while(true) {
             try {
-                if(srv_sock != null);
+                if(srv_sock != null)
                     Util.close(srv_sock);
-                srv_sock=factory.createServerSocket(service_name);
-                InetSocketAddress sock_addr=new InetSocketAddress(bind_addr, start_port);
-                srv_sock.bind(sock_addr);
+                srv_sock=factory.createServerSocket(service_name, start_port, 0, bind_addr);
                 return srv_sock;
             }
             catch(SocketException bind_ex) {

@@ -494,12 +494,13 @@ public class FD_SOCK extends Protocol implements Runnable {
         suspected_mbrs.addAll(suspects);
         List<Address> eligible_mbrs=new ArrayList<>(this.members);
         eligible_mbrs.removeAll(suspected_mbrs);
+        Collection<Address> suspects_copy=new ArrayList<>(suspected_mbrs);
 
-        // Check if we're coord, then send up the stack
-        if(local_addr != null && !eligible_mbrs.isEmpty() && local_addr.equals(eligible_mbrs.get(0))) {
-            log.debug("%s: suspecting %s", local_addr, suspected_mbrs);
-            up_prot.up(new Event(Event.SUSPECT, suspected_mbrs));
-            down_prot.down(new Event(Event.SUSPECT, suspected_mbrs));
+        // Check if we're coord, then send up the stack, make a copy (https://issues.redhat.com/browse/JGRP-2552)
+        if(!suspects_copy.isEmpty() && local_addr != null && !eligible_mbrs.isEmpty() && local_addr.equals(eligible_mbrs.get(0))) {
+            log.debug("%s: suspecting %s", local_addr, suspects_copy);
+            up_prot.up(new Event(Event.SUSPECT, suspects_copy));
+            down_prot.down(new Event(Event.SUSPECT, suspects_copy));
         }
     }
 
@@ -674,9 +675,9 @@ public class FD_SOCK extends Protocol implements Runnable {
         get_cache_promise.reset();
         while(attempts > 0 && isPingerThreadRunning()) {
             if((coord=determineCoordinator()) != null) {
-                if(coord.equals(local_addr)) { // we are the first member --> empty cache
+                if(coord.equals(local_addr)) // we are the first member --> empty cache
                     return;
-                }
+                // always sent to coord != self, so we don't need the DONT_LOOPBACK flag here:
                 Message msg=new Message(coord).setFlag(Message.Flag.INTERNAL)
                   .putHeader(this.id, new FdHeader(FdHeader.GET_CACHE));
                 down_prot.down(msg);
@@ -740,8 +741,7 @@ public class FD_SOCK extends Protocol implements Runnable {
      */
     protected void sendIHaveSockMessage(Address dst, Address mbr, IpAddress addr) {
         Message msg=new Message(dst).setFlag(Message.Flag.INTERNAL).setTransientFlag(Message.TransientFlag.DONT_LOOPBACK);
-        FdHeader hdr=new FdHeader(FdHeader.I_HAVE_SOCK, mbr);
-        hdr.sock_addr=addr;
+        FdHeader hdr=new FdHeader(FdHeader.I_HAVE_SOCK, mbr).sockAddress(addr);
         msg.putHeader(this.id, hdr);
         down_prot.down(msg);
     }
@@ -766,7 +766,7 @@ public class FD_SOCK extends Protocol implements Runnable {
         // 2. Try to get the server socket address from mbr (or all, as fallback)
         ping_addr_promise.reset();
         for(Address dest: Arrays.asList(mbr, null)) {
-            Message msg=new Message(dest).setFlag(Message.Flag.INTERNAL)
+            Message msg=new Message(dest).setFlag(Message.Flag.INTERNAL).setTransientFlag(Message.TransientFlag.DONT_LOOPBACK)
               .putHeader(this.id, new FdHeader(FdHeader.WHO_HAS_SOCK, mbr));
             down_prot.down(msg);
             if((ret=ping_addr_promise.getResult(500)) != null)
@@ -893,6 +893,8 @@ public class FD_SOCK extends Protocol implements Runnable {
         public FdHeader mbrs(Set<Address> members) {
             this.mbrs=members; return this;
         }
+
+        public FdHeader sockAddress(IpAddress a) {this.sock_addr=a; return this;};
 
         public String toString() {
             StringBuilder sb=new StringBuilder(type2String(type));
