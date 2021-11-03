@@ -356,5 +356,15 @@ public abstract class Protocol {
         short tmp_id=getId();
         return tmp_id > 0 && msg.getHeader(tmp_id) != null;
     }
+    
+    // CCS begin : logging
+    protected String ccsPrefix() {
+        try {
+            return "CCS " + getProtocolStack().getChannel().getClusterName() + ">> ";
+        } catch (RuntimeException x) {
+            return "CCS>> ";
+        }
+    }
+    // CCS end
 
 }

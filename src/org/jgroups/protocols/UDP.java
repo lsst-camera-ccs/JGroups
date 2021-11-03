@@ -135,7 +135,11 @@ public class UDP extends TP {
     protected SuppressLog<InetAddress> suppress_log_out_of_buffer_space;
 
     protected static final boolean is_android, is_mac;
-
+    
+    // CCS begin
+    private InetAddress ccsInetAddr;
+    private int ccsPort;
+    // CCS end
 
     static  {
         is_android=Util.checkForAndroid();
@@ -435,17 +439,59 @@ public class UDP extends TP {
         return receivers;
     }
 
+// CCS replaced
+//    protected IpAddress createLocalAddress() {
+//        if(sock == null || sock.isClosed())
+//            return null;
+//        if(external_addr != null) {
+//            if(external_port > 0)
+//                return new IpAddress(external_addr, external_port);
+//            return new IpAddress(external_addr, sock.getLocalPort());
+//        }
+//        return new IpAddress(sock.getLocalAddress(), sock.getLocalPort());
+//    }
 
+    // CCS begin replacement : add logging and caching
     protected IpAddress createLocalAddress() {
-        if(sock == null || sock.isClosed())
+        if(sock == null || sock.isClosed()) {
+            log.warn("CCS>> Trying to fetch address of a closet socket: "+ sock);
             return null;
+        }
         if(external_addr != null) {
+            log.debug("CCS> Using external address when creating local: "+ external_addr +" : "+ external_port);
             if(external_port > 0)
                 return new IpAddress(external_addr, external_port);
             return new IpAddress(external_addr, sock.getLocalPort());
         }
-        return new IpAddress(sock.getLocalAddress(), sock.getLocalPort());
+        try {
+            InetAddress addr = sock.getLocalAddress();
+            int port = sock.getLocalPort();
+            if (addr == null || port < 0) {
+                try {
+                    log.warn(ccsPrefix() +"Failed to fetch physical address: \n" + dumpSocketInfo());
+                } catch (Exception x) {
+                    log.warn(ccsPrefix() +"Failed to fetch physical address", x);
+                }
+                if (ccsInetAddr != null) {
+                    log.warn(ccsPrefix() +"Using cached physical address: "+ ccsInetAddr +" : "+ ccsPort);
+                    addr = ccsInetAddr;
+                    port = ccsPort;
+                }
+            } else if (ccsInetAddr == null) {
+                ccsInetAddr = addr;
+                ccsPort = port;
+            } else if (!(ccsInetAddr.equals(addr) && ccsPort == port)) {
+                log.debug(ccsPrefix() +"Change in physical address: Was "+ ccsInetAddr +" : "+ ccsPort +", Now "+ addr +" : "+ port);
+                ccsInetAddr = addr;
+                ccsPort = port;
+            }
+            return new IpAddress(addr, port);
+        } catch (RuntimeException x) {
+            log.warn(ccsPrefix() +"Exception while fetching physical address", x);
+            throw x;
+        }
     }
+    // CCS end replacement
 
     protected <T extends UDP> T setTimeToLive(int ttl, MulticastSocket s) {
         try {
