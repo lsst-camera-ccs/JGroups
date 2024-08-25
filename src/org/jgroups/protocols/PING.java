@@ -9,6 +9,7 @@ import org.jgroups.util.Responses;
 
 import java.io.InterruptedIOException;
 import java.util.List;
+import org.jgroups.ccs.CCSUtil;
 
 
 /**
@@ -44,10 +45,11 @@ public class PING extends Discovery {
         // CCS begin
         StringBuilder sb = new StringBuilder();
         if (ccs_physical || ccs_connect) {
-            sb.append("CCS> PING.sendDiscoveryRequest: cluster=").append(cluster_name).append(", initial_discovery=").append(initial_discovery);
+            sb.append("PING.sendDiscoveryRequest, initial_discovery=").append(initial_discovery);
+            sb.append(", members_to_find").append(members_to_find).append(".");
 
         }
-        // CCS begin
+        // CCS end
         
         PingData data=null;
 
@@ -55,7 +57,7 @@ public class PING extends Discovery {
             PhysicalAddress physical_addr=(PhysicalAddress)down(new Event(Event.GET_PHYSICAL_ADDRESS, local_addr));
             // CCS begin
             if (ccs_physical || ccs_connect) {
-                sb.append(", physical=").append(physical_addr);
+                sb.append("My physical: ").append(CCSUtil.toString(physical_addr)).append(". ");
             } 
             // CCS end
 
@@ -64,12 +66,6 @@ public class PING extends Discovery {
             if(members_to_find != null && members_to_find.size() <= max_members_in_discovery_request)
                 data.mbrs(members_to_find);
         }
-        
-        // CCS begin
-        if (ccs_physical || ccs_connect) {
-            log.debug(sb.toString());
-        }
-        // CCS begin
 
         // message needs to have DONT_BUNDLE flag: if A sends message M to B, and we need to fetch B's physical
         // address, then the bundler thread blocks until the discovery request has returned. However, we cannot send
@@ -80,6 +76,15 @@ public class PING extends Discovery {
           .setTransientFlag(Message.TransientFlag.DONT_LOOPBACK);
         if(data != null)
             msg.setBuffer(marshal(data));
+        
+        // CCS begin
+        if (ccs_physical || ccs_connect) {
+            sb.append("Message from ").append(CCSUtil.toString(msg.getSrc()));
+            sb.append(" to ").append(CCSUtil.toString(msg.getSrc())).append(".");
+            log.info(sb.toString());
+        }
+        // CCS end
+        
         sendMcastDiscoveryRequest(msg);
     }
 

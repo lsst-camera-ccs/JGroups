@@ -58,12 +58,13 @@ public abstract class Protocol {
             "instances of it in the same stack",writable=false)
     protected short            id=ClassConfigurator.getProtocolId(getClass());
 
-    protected final Log        log=LogFactory.getLog(this.getClass());
-
     // CCS begin
+//    protected final Log        log=LogFactory.getLog(this.getClass());
+    protected final Log        log = new LogCCS(LogFactory.getLog(this.getClass()));
+
     static public final boolean ccs_physical = System.getProperty("ccs.jg.physical") != null;
     static public final boolean ccs_connect = System.getProperty("ccs.jg.connect") != null;
-    // CCS begin
+    // CCS end
 
 
 
@@ -360,5 +361,194 @@ public abstract class Protocol {
         short tmp_id=getId();
         return tmp_id > 0 && msg.getHeader(tmp_id) != null;
     }
+
+    // CCS begin
+    public StringBuilder buildLog(String... seed) {
+        String prefix = getClusterName();
+        StringBuilder out = new StringBuilder("(").append(prefix).append(") ");
+        for (String s : seed) {
+            out.append(s);
+        }
+        return out;
+    }
+    
+    protected String getClusterName() {
+        try {
+            return getProtocolStack().getChannel().clusterName();
+        } catch (NullPointerException x) {
+            return "CCS";
+        }
+    }
+    
+    private class LogCCS implements Log {
+        
+        private final Log log;
+        
+        LogCCS(Log log) {
+            this.log = log;
+        }
+
+        @Override
+        public boolean isFatalEnabled() {
+            return log.isFatalEnabled();
+        }
+
+        @Override
+        public boolean isErrorEnabled() {
+            return log.isErrorEnabled();
+        }
+
+        @Override
+        public boolean isWarnEnabled() {
+            return log.isWarnEnabled();
+        }
+
+        @Override
+        public boolean isInfoEnabled() {
+            return log.isInfoEnabled();
+        }
+
+        @Override
+        public boolean isDebugEnabled() {
+            return log.isDebugEnabled();
+        }
+
+        @Override
+        public boolean isTraceEnabled() {
+            return log.isTraceEnabled();
+        }
+
+        @Override
+        public void fatal(String msg) {
+            log.fatal("["+ getClusterName() +"] "+ msg);
+        }
+
+        @Override
+        public void fatal(String format, Object... args) {
+            if (isFatalEnabled()) {
+                Object[] aa = new Object[args.length+1];
+                System.arraycopy(args, 0, aa, 1, args.length);
+                aa[0] = getClusterName();
+                log.fatal("[%s] "+ format, aa);
+            }
+        } 
+
+        @Override
+        public void fatal(String msg, Throwable throwable) {
+            log.fatal("["+ getClusterName() +"] "+ msg, throwable);
+        }
+
+        @Override
+        public void error(String msg) {
+            log.error("["+ getClusterName() +"] "+ msg);
+        }
+
+        @Override
+        public void error(String format, Object... args) {
+            if (isErrorEnabled()) {
+                Object[] aa = new Object[args.length+1];
+                System.arraycopy(args, 0, aa, 1, args.length);
+                aa[0] = getClusterName();
+                log.error("[%s] "+ format, aa);
+            }
+        } 
+
+        @Override
+        public void error(String msg, Throwable throwable) {
+            log.error("["+ getClusterName() +"] "+ msg, throwable);
+        }
+
+        @Override
+        public void warn(String msg) {
+            log.warn("["+ getClusterName() +"] "+ msg);
+        }
+
+        @Override
+        public void warn(String format, Object... args) {
+            if (isWarnEnabled()) {
+                Object[] aa = new Object[args.length+1];
+                System.arraycopy(args, 0, aa, 1, args.length);
+                aa[0] = getClusterName();
+                log.warn("[%s] "+ format, aa);
+            }
+        } 
+
+        @Override
+        public void warn(String msg, Throwable throwable) {
+            log.warn("["+ getClusterName() +"] "+ msg, throwable);
+        }
+
+        @Override
+        public void info(String msg) {
+            log.info("["+ getClusterName() +"] "+ msg);
+        }
+
+        @Override
+        public void info(String format, Object... args) {
+            if (isInfoEnabled()) {
+                Object[] aa = new Object[args.length+1];
+                System.arraycopy(args, 0, aa, 1, args.length);
+                aa[0] = getClusterName();
+                log.info("[%s] "+ format, aa);
+            }
+        }
+
+        @Override
+        public void debug(String msg) {
+            log.debug("["+ getClusterName() +"] "+ msg);
+        }
+
+        @Override
+        public void debug(String format, Object... args) {
+            if (isDebugEnabled()) {
+                Object[] aa = new Object[args.length+1];
+                System.arraycopy(args, 0, aa, 1, args.length);
+                aa[0] = getClusterName();
+                log.debug("[%s] "+ format, aa);
+            }
+        } 
+
+        @Override
+        public void debug(String msg, Throwable throwable) {
+            log.debug("["+ getClusterName() +"] "+ msg, throwable);
+        }
+
+        @Override
+        public void trace(Object obj) {
+            trace(obj == null ? "null" : obj.toString());
+        }
+
+        @Override
+        public void trace(String msg) {
+            log.trace("["+ getClusterName() +"] "+ msg);
+        }
+
+        @Override
+        public void trace(String format, Object... args) {
+            if (isTraceEnabled()) {
+                Object[] aa = new Object[args.length+1];
+                System.arraycopy(args, 0, aa, 1, args.length);
+                aa[0] = getClusterName();
+                log.trace("[%s] "+ format, aa);
+            }
+        } 
+
+        @Override
+        public void trace(String msg, Throwable throwable) {
+            log.trace("["+ getClusterName() +"] "+ msg, throwable);
+        }
+
+        @Override
+        public void setLevel(String level) {
+            log.setLevel(level);
+        }
+
+        @Override
+        public String getLevel() {
+            return log.getLevel();
+        }
+        
+    }
+    // CCS end
 
 }

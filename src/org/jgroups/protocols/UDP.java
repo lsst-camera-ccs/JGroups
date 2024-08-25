@@ -18,6 +18,7 @@ import java.net.*;
 import java.util.Formatter;
 import java.util.List;
 import java.util.Map;
+import org.jgroups.ccs.CCSUtil;
 
 
 /**
@@ -437,38 +438,53 @@ public class UDP extends TP {
 
 
     protected IpAddress createLocalAddress() {
-        
         // CCS begin
+        StringBuilder sb = null;
         if (ccs_physical) {
-            StringBuilder sb = new StringBuilder("CCS> UDP.createLocalAddress: ");
-            sb.append("[sock: ").append(sock);
-            if (sock != null) {
-                if (sock.isClosed()) {
-                    sb.append(" ").append("closed");
-                } else {
-                    sb.append(" ").append(sock.getLocalAddress()).append(":").append(sock.getLocalPort());
-                }
-                
+            sb = new StringBuilder("UDP.createLocalAddress: ");
+            sb.append("External=").append(external_addr).append(":").append(external_port).append(". ");
+            sb.append("Socket: ");
+            if (sock == null) {
+                sb.append("null.");
+            } else {
+                sb.append("IP=").append(sock.getLocalAddress());
+                sb.append(", port=").append(sock.getLocalPort()).append(". ");
             }
-            sb.append("] ");
-            if (external_addr != null) {
-                sb.append("external_addr=").append(external_addr).append(" ");
-            }
-            if (external_port != 0) {
-                sb.append("external_port=").append(external_port).append(" ");
-            }
-            log.debug(sb.toString());
         }
-        // CCS end
 
-        if(sock == null || sock.isClosed())
+        IpAddress out = null;
+        if(sock == null || sock.isClosed()) {
+            if (ccs_physical) log.warn(sb.toString());
             return null;
-        if(external_addr != null) {
-            if(external_port > 0)
-                return new IpAddress(external_addr, external_port);
-            return new IpAddress(external_addr, sock.getLocalPort());
         }
-        return new IpAddress(sock.getLocalAddress(), sock.getLocalPort());
+        if(external_addr != null) {
+            if(external_port > 0) {
+                out = new IpAddress(external_addr, external_port);
+            } else {
+                out = new IpAddress(external_addr, sock.getLocalPort());
+            }
+        } else {
+            out = new IpAddress(sock.getLocalAddress(), sock.getLocalPort());
+        }
+        if (ccs_physical) {
+            sb.append(CCSUtil.toString(out)).append(".");
+            if (out.getIpAddress() == null || out.getPort() < 1) {
+                log.warn(sb.toString());
+            } else {
+                log.debug(sb.toString());
+            }
+        }
+        return out;
+
+//        if(sock == null || sock.isClosed())
+//            return null;
+//        if(external_addr != null) {
+//            if(external_port > 0)
+//                return new IpAddress(external_addr, external_port);
+//            return new IpAddress(external_addr, sock.getLocalPort());
+//        }
+//        return new IpAddress(sock.getLocalAddress(), sock.getLocalPort());
+        // CCS end
     }
 
     protected <T extends UDP> T setTimeToLive(int ttl, MulticastSocket s) {
