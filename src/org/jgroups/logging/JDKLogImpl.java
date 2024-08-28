@@ -5,6 +5,7 @@ import java.util.IllegalFormatException;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+import org.jgroups.stack.Protocol;
 
 /**
  * Logger that delivers messages to a JDK logger
@@ -39,11 +40,19 @@ public class JDKLogImpl implements Log {
 
             // find the nearest ancestor that doesn't belong to JDKLogImpl
             for (StackTraceElement frame : new Exception().getStackTrace()) {
-                if (!frame.getClassName().equals(THIS_CLASS_NAME)) {
-                    r.setSourceClassName(frame.getClassName());
+                // CCS begin:
+                String className = frame.getClassName();
+                if (!(className.equals(THIS_CLASS_NAME) || className.equals("org.jgroups.stack.Protocol$LogCCS"))) {
+                    r.setSourceClassName(className);
                     r.setSourceMethodName(frame.getMethodName());
                     break;
                 }
+                // CCS end
+//                if (!frame.getClassName().equals(THIS_CLASS_NAME)) {
+//                    r.setSourceClassName(frame.getClassName());
+//                    r.setSourceMethodName(frame.getMethodName());
+//                    break;
+//                }
             }
 
             logger.log(r);

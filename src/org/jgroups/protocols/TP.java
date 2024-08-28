@@ -25,6 +25,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
+import org.jgroups.ccs.CCSUtil;
 
 
 /**
@@ -1191,27 +1192,6 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
 
             case Event.GET_PHYSICAL_ADDRESS:
                 
-                // CCS begin
-                if (ccs_physical) {
-                    StringBuilder sb = new StringBuilder("TP.Event.GET_PHYSICAL_ADDRESS: ");
-
-                    Address addr = evt.getArg();
-                    sb.append("Logical=").append(addr).append(", ");
-                    PhysicalAddress physical_addr = getPhysicalAddressFromCache(addr);
-                    if (physical_addr != null) {
-                        sb.append("from cache, ").append(physical_addr).append(" ");
-                    } else if (Objects.equals(addr, local_addr)) {
-                        physical_addr = getPhysicalAddress();
-                        if (physical_addr != null) {
-                            addPhysicalAddressToCache(addr, physical_addr);
-                        }
-                        sb.append("from socket, ");
-                    }
-                    log.debug(sb.append("Physical: ").append(physical_addr).toString());
-                    return physical_addr;
-                }
-                // CCS end
-                
                 Address addr=evt.getArg();
                 PhysicalAddress physical_addr=getPhysicalAddressFromCache(addr);
                 if(physical_addr != null)
@@ -1633,7 +1613,7 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
             sendUnicast((PhysicalAddress)dest, buf, offset, length);
             // CCS begin
             if (ccs_physical || ccs_connect) {
-                log.debug("TP: sendToSingleMember, specified physical address: "+ dest);
+                log.debug("TP: sendToSingleMember, specified physical address: "+ CCSUtil.toString(dest));
             } 
             // CCS end
             return;
@@ -1644,13 +1624,18 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
             sendUnicast(physical_dest,buf,offset,length);
             // CCS begin
             if (ccs_physical || ccs_connect) {
-                log.debug("TP: sendToSingleMember "+ dest +", physical address from cache: "+ physical_dest);
+                log.debug("TP: sendToSingleMember "+ CCSUtil.toString(dest) +", physical address from cache: "+ CCSUtil.toString(physical_dest));
             } 
             // CCS end
             return;
         }
 
         if(who_has_cache.addIfAbsentOrExpired(dest)) { // true if address was added
+            // CCS begin
+            if (ccs_physical) {
+                log.debug("TP: AbsentOrExpired " + CCSUtil.toString(dest));
+            }
+            // CCS end
             // FIND_MBRS must return quickly
             Responses responses=fetchResponsesFromDiscoveryProtocol(Collections.singletonList(dest));
             try {
@@ -1660,7 +1645,7 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
                             sendUnicast(physical_dest, buf, offset, length);
                             // CCS begin
                             if (ccs_physical || ccs_connect) {
-                                log.debug("TP: sendToSingleMember " + dest + ", physical address from discover: " + physical_dest);
+                                log.debug("TP: sendToSingleMember " + CCSUtil.toString(dest) + ", physical address from discover: " + CCSUtil.toString(physical_dest));
                             }
                             // CCS end
                             return;
@@ -1676,21 +1661,11 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
         
         // CCS begin
         if (ccs_physical || ccs_connect) {
-            StringBuilder sb = new StringBuilder("TP: failed sendToSingleMember. Address: ");
-            if (dest != null) {
-                sb.append(dest.getClass().getSimpleName());
-                sb.append(", name ").append(NameCache.get(dest));
-                if (dest instanceof UUID) {
-                    sb.append(", UUID ").append(((UUID) dest).toStringLong());
-                }
-            } else {
-                sb.append(dest);
-            }
-            sb.append(".");
-            StackTraceElement[] stack = Thread.currentThread().getStackTrace();
-            for (StackTraceElement f : stack) {
+            StringBuilder sb = new StringBuilder("TP: failed sendToSingleMember "+ CCSUtil.toString(dest));
+            for (StackTraceElement f : Thread.currentThread().getStackTrace()) {
                 sb.append("\n").append(f);
             }
+            sb.append("\nPhysical address cache:\n").append(logical_addr_cache.printCache());
             log.warn(toString());
         }
         // CCS end

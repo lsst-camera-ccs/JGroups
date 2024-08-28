@@ -67,7 +67,7 @@ public class ClientGmsImpl extends GmsImpl {
                 if (installViewIfValidJoinRsp(join_promise, false)) {
                     // CCS begin
                     if (Protocol.ccs_connect) {
-                        log.debug("CCS> ClientGmsImpl: installViewIfValidJoinRsp(...) 1");
+                        log.debug("ClientGmsImpl: installViewIfValidJoinRsp(...) 1");
                     }
                     // CCS end
                     return;
@@ -85,7 +85,7 @@ public class ClientGmsImpl extends GmsImpl {
                 }
                 // CCS begin
                 if (Protocol.ccs_connect) {
-                    StringBuilder sb = new StringBuilder("CCS> ClientGmsImpl: Responses: ").append(responses);
+                    StringBuilder sb = new StringBuilder("ClientGmsImpl: Responses: ").append(responses);
                     if (responses != null) {
                         sb.append(" [");
                         for (PingData pd : responses) {
@@ -101,7 +101,7 @@ public class ClientGmsImpl extends GmsImpl {
                 if (installViewIfValidJoinRsp(join_promise, false)) {
                     // CCS begin
                     if (Protocol.ccs_connect) {
-                        log.debug("CCS> ClientGmsImpl: installViewIfValidJoinRsp(...) 2");
+                        log.debug("ClientGmsImpl: installViewIfValidJoinRsp(...) 2");
                     }
                     // CCS end
                     return;
@@ -137,7 +137,7 @@ public class ClientGmsImpl extends GmsImpl {
                         if (installViewIfValidJoinRsp(join_promise, true)) {
                             // CCS begin
                             if (Protocol.ccs_connect) {
-                                log.debug("CCS> ClientGmsImpl: installViewIfValidJoinRsp(...) 3");
+                                log.debug("ClientGmsImpl: installViewIfValidJoinRsp(...) 3");
                             }
                             // CCS end
                             return;

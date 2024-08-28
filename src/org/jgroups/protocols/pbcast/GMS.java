@@ -1056,12 +1056,6 @@ public class GMS extends Protocol implements DiagnosticsHandler.ProbeHandler {
                 boolean state_transfer=type == Event.CONNECT_WITH_STATE_TRANSFER
                         || type == Event.CONNECT_WITH_STATE_TRANSFER_USE_FLUSH;
 
-                // CCS begin
-                if (ccs_connect) {
-                    log.debug("GMS.Event.CONNECT_USE_FLUSH");
-                }
-                // CCS end
-
                 if(print_local_addr) {
                     PhysicalAddress physical_addr=print_physical_addrs?
                             (PhysicalAddress)down(new Event(Event.GET_PHYSICAL_ADDRESS, local_addr)) : null;
@@ -1085,13 +1079,15 @@ public class GMS extends Protocol implements DiagnosticsHandler.ProbeHandler {
                 if (state_transfer) {
                     impl.joinWithStateTransfer(local_addr, use_flush);
                 } else {
-                    // CCS begin
-                    if (ccs_connect) {
-                        log.debug("GMS: "+ impl.getClass().getSimpleName() +".join(" + local_addr +")");
-                    }
-                    // CCS begin
                     impl.join(local_addr, use_flush);
                 }
+                // CCS begin
+                if (ccs_connect && log.isDebugEnabled()) {
+                    StringBuilder sb = new StringBuilder("GMS.Event.CONNECT.");
+                    sb.append("Local: ").append(CCSUtil.toString(local_addr));
+                    log.debug(sb.toString());
+                }
+                // CCS end
                 return null;  // don't pass down: event has already been passed down
 
             case Event.DISCONNECT:
