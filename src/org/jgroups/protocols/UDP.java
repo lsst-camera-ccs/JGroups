@@ -484,6 +484,7 @@ public class UDP extends TP {
 //            return new IpAddress(external_addr, sock.getLocalPort());
 //        }
 //        return new IpAddress(sock.getLocalAddress(), sock.getLocalPort());
+
         // CCS end
     }
 

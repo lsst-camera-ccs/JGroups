@@ -1193,7 +1193,7 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
                 
                 // CCS begin
                 if (ccs_physical) {
-                    StringBuilder sb = buildLog("TP.Event.GET_PHYSICAL_ADDRESS: ");
+                    StringBuilder sb = new StringBuilder("TP.Event.GET_PHYSICAL_ADDRESS: ");
 
                     Address addr = evt.getArg();
                     sb.append("Logical=").append(addr).append(", ");

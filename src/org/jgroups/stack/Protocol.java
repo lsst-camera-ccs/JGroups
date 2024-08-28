@@ -363,19 +363,12 @@ public abstract class Protocol {
     }
 
     // CCS begin
-    public StringBuilder buildLog(String... seed) {
-        String prefix = getClusterName();
-        StringBuilder out = new StringBuilder("(").append(prefix).append(") ");
-        for (String s : seed) {
-            out.append(s);
-        }
-        return out;
-    }
     
-    protected String getClusterName() {
+    protected String getBusName() {
         try {
-            return getProtocolStack().getChannel().clusterName();
-        } catch (NullPointerException x) {
+            String name = getProtocolStack().getChannel().clusterName();
+            return name == null ? "CCS" : name;
+        } catch (RuntimeException x) {
             return "CCS";
         }
     }
@@ -420,7 +413,7 @@ public abstract class Protocol {
 
         @Override
         public void fatal(String msg) {
-            log.fatal("["+ getClusterName() +"] "+ msg);
+            log.fatal("["+ getBusName() +"] "+ msg);
         }
 
         @Override
@@ -428,19 +421,19 @@ public abstract class Protocol {
             if (isFatalEnabled()) {
                 Object[] aa = new Object[args.length+1];
                 System.arraycopy(args, 0, aa, 1, args.length);
-                aa[0] = getClusterName();
+                aa[0] = getBusName();
                 log.fatal("[%s] "+ format, aa);
             }
         } 
 
         @Override
         public void fatal(String msg, Throwable throwable) {
-            log.fatal("["+ getClusterName() +"] "+ msg, throwable);
+            log.fatal("["+ getBusName() +"] "+ msg, throwable);
         }
 
         @Override
         public void error(String msg) {
-            log.error("["+ getClusterName() +"] "+ msg);
+            log.error("["+ getBusName() +"] "+ msg);
         }
 
         @Override
@@ -448,19 +441,19 @@ public abstract class Protocol {
             if (isErrorEnabled()) {
                 Object[] aa = new Object[args.length+1];
                 System.arraycopy(args, 0, aa, 1, args.length);
-                aa[0] = getClusterName();
+                aa[0] = getBusName();
                 log.error("[%s] "+ format, aa);
             }
         } 
 
         @Override
         public void error(String msg, Throwable throwable) {
-            log.error("["+ getClusterName() +"] "+ msg, throwable);
+            log.error("["+ getBusName() +"] "+ msg, throwable);
         }
 
         @Override
         public void warn(String msg) {
-            log.warn("["+ getClusterName() +"] "+ msg);
+            log.warn("["+ getBusName() +"] "+ msg);
         }
 
         @Override
@@ -468,19 +461,19 @@ public abstract class Protocol {
             if (isWarnEnabled()) {
                 Object[] aa = new Object[args.length+1];
                 System.arraycopy(args, 0, aa, 1, args.length);
-                aa[0] = getClusterName();
+                aa[0] = getBusName();
                 log.warn("[%s] "+ format, aa);
             }
         } 
 
         @Override
         public void warn(String msg, Throwable throwable) {
-            log.warn("["+ getClusterName() +"] "+ msg, throwable);
+            log.warn("["+ getBusName() +"] "+ msg, throwable);
         }
 
         @Override
         public void info(String msg) {
-            log.info("["+ getClusterName() +"] "+ msg);
+            log.info("["+ getBusName() +"] "+ msg);
         }
 
         @Override
@@ -488,14 +481,14 @@ public abstract class Protocol {
             if (isInfoEnabled()) {
                 Object[] aa = new Object[args.length+1];
                 System.arraycopy(args, 0, aa, 1, args.length);
-                aa[0] = getClusterName();
+                aa[0] = getBusName();
                 log.info("[%s] "+ format, aa);
             }
         }
 
         @Override
         public void debug(String msg) {
-            log.debug("["+ getClusterName() +"] "+ msg);
+            log.debug("["+ getBusName() +"] "+ msg);
         }
 
         @Override
@@ -503,14 +496,14 @@ public abstract class Protocol {
             if (isDebugEnabled()) {
                 Object[] aa = new Object[args.length+1];
                 System.arraycopy(args, 0, aa, 1, args.length);
-                aa[0] = getClusterName();
+                aa[0] = getBusName();
                 log.debug("[%s] "+ format, aa);
             }
         } 
 
         @Override
         public void debug(String msg, Throwable throwable) {
-            log.debug("["+ getClusterName() +"] "+ msg, throwable);
+            log.debug("["+ getBusName() +"] "+ msg, throwable);
         }
 
         @Override
@@ -520,7 +513,7 @@ public abstract class Protocol {
 
         @Override
         public void trace(String msg) {
-            log.trace("["+ getClusterName() +"] "+ msg);
+            log.trace("["+ getBusName() +"] "+ msg);
         }
 
         @Override
@@ -528,14 +521,14 @@ public abstract class Protocol {
             if (isTraceEnabled()) {
                 Object[] aa = new Object[args.length+1];
                 System.arraycopy(args, 0, aa, 1, args.length);
-                aa[0] = getClusterName();
+                aa[0] = getBusName();
                 log.trace("[%s] "+ format, aa);
             }
         } 
 
         @Override
         public void trace(String msg, Throwable throwable) {
-            log.trace("["+ getClusterName() +"] "+ msg, throwable);
+            log.trace("["+ getBusName() +"] "+ msg, throwable);
         }
 
         @Override
