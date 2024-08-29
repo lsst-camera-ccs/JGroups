@@ -1842,6 +1842,14 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
     }
 
     protected boolean addPhysicalAddressToCache(Address logical_addr, PhysicalAddress physical_addr, boolean overwrite) {
+        // CCS begin
+        if (ccs_physical) {
+            if (logical_addr == null || physical_addr == null || (physical_addr instanceof IpAddress &&
+                    (((IpAddress)physical_addr).getIpAddress() == null  || ((IpAddress)physical_addr).getPort() <=0))) {
+                log.warn("TP: attempt to cache invalid physical address: Logical: "+ CCSUtil.toString(logical_addr) +", Physical: "+ CCSUtil.toString(physical_addr));
+            }
+        }
+        // CCS end
         return logical_addr != null && physical_addr != null &&
           overwrite? logical_addr_cache.add(logical_addr, physical_addr) : logical_addr_cache.addIfAbsent(logical_addr, physical_addr);
     }
