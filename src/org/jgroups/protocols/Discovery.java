@@ -18,6 +18,7 @@ import java.util.*;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import org.jgroups.ccs.CCSUtil;
 
 
 /**
@@ -598,6 +599,18 @@ public abstract class Discovery extends Protocol {
 
     protected void sendDiscoveryResponse(Address logical_addr, PhysicalAddress physical_addr,
                                          String logical_name, final Address sender, boolean coord) {
+        // CCS begin
+        if (ccs_physical) {
+            if (logical_addr == null || physical_addr == null || sender == null) {
+                StringBuilder sb = new StringBuilder("Discovery.sendDiscoveryResponse missing data. ");
+                sb.append("Logical: ").append(CCSUtil.toString(logical_addr)).append(". ");
+                sb.append("Physical: ").append(CCSUtil.toString(physical_addr)).append(". ");
+                sb.append("Sender: ").append(CCSUtil.toString(sender)).append(". ");
+                sb.append("Coordinator: ").append(coord);
+                log.warn(sb.toString());
+            }
+        }
+        // CCS end
         final PingData data=new PingData(logical_addr, is_server, logical_name, physical_addr).coord(coord);
         final Message rsp_msg=new Message(sender).setFlag(Message.Flag.INTERNAL, Message.Flag.OOB, Message.Flag.DONT_BUNDLE)
           .putHeader(this.id, new PingHeader(PingHeader.GET_MBRS_RSP)).setBuffer(marshal(data));
