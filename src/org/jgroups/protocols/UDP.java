@@ -444,18 +444,21 @@ public class UDP extends TP {
             sb = new StringBuilder("UDP.createLocalAddress: ");
             sb.append("External=").append(external_addr).append(":").append(external_port).append(". ");
             sb.append("Socket: ");
-            if (sock == null) {
-                sb.append("null.");
-            } else {
-                sb.append("IP=").append(sock.getLocalAddress());
-                sb.append(", port=").append(sock.getLocalPort()).append(". ");
-            }
         }
 
         IpAddress out = null;
         if(sock == null || sock.isClosed()) {
-            if (ccs_physical) log.warn(sb.toString());
+            if (ccs_physical) {
+                if (sock == null) {
+                    log.debug(sb.append("null.").toString());
+                } else {
+                    log.warn(sb.append("closed.").toString());
+                }
+            }
             return null;
+        } else if (ccs_physical) {
+            sb.append("IP=").append(sock.getLocalAddress());
+            sb.append(", port=").append(sock.getLocalPort()).append(". ");
         }
         if(external_addr != null) {
             if(external_port > 0) {

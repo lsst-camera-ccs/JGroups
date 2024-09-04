@@ -322,6 +322,32 @@ public abstract class Discovery extends Protocol {
                     }
                 }
 
+                
+                // CCS begin
+                if (ccs_physical || ccs_connect) {
+                    boolean warn = false;
+                    StringBuilder sb = new StringBuilder("Discovery.up(Message): received request. Logical: ").append(CCSUtil.toString(logical_addr)).append(". ");
+                    if (logical_addr == null) {
+                        warn = true;
+                    }
+                    String logicalName = data.getLogicalName();
+                    sb.append("Logical name: ").append(logicalName).append(". ");
+                    warn = warn || logical_addr == null || logicalName == null;
+                    PhysicalAddress physAddress = data.getPhysicalAddr();
+                    sb.append("Physical: ").append(CCSUtil.toString(logical_addr)).append(". ");
+                    warn = warn || logical_addr == null || logicalName == null || physAddress == null;
+                    if (physAddress instanceof IpAddress) {
+                        IpAddress ipAddress = (IpAddress) physAddress;
+                        warn = warn || ipAddress.getIpAddress() == null || ipAddress.getPort() <= 0;
+                    }
+                    if (warn) {
+                        log.warn(sb.toString());
+                    } else {
+                        log.debug(sb.toString());
+                    }
+                }
+                // CCS end
+                
                 // add physical address and logical name of the discovery sender (if available) to the cache
                 if(data != null) { // null if use_ip_addrs is true
                     addDiscoveryResponseToCaches(logical_addr, data.getLogicalName(), data.getPhysicalAddr());
@@ -359,6 +385,11 @@ public abstract class Discovery extends Protocol {
                     log.trace("%s: received GET_MBRS_RSP from %s: %s", local_addr, msg.src(), data);
                     handleDiscoveryResponse(data, msg.src());
                 }
+                // CCS begin
+                else if (ccs_physical || ccs_connect) {
+                    log.warn("Empty discovery response");
+                }
+                // CCS end
                 return null;
 
             default:
@@ -601,13 +632,15 @@ public abstract class Discovery extends Protocol {
                                          String logical_name, final Address sender, boolean coord) {
         // CCS begin
         if (ccs_physical) {
+            StringBuilder sb = new StringBuilder("Discovery.sendDiscoveryResponse missing data. ");
+            sb.append("Logical: ").append(CCSUtil.toString(logical_addr)).append(". ");
+            sb.append("Physical: ").append(CCSUtil.toString(physical_addr)).append(". ");
+            sb.append("Sender: ").append(CCSUtil.toString(sender)).append(". ");
+            sb.append("Coordinator: ").append(coord);
             if (logical_addr == null || physical_addr == null || sender == null) {
-                StringBuilder sb = new StringBuilder("Discovery.sendDiscoveryResponse missing data. ");
-                sb.append("Logical: ").append(CCSUtil.toString(logical_addr)).append(". ");
-                sb.append("Physical: ").append(CCSUtil.toString(physical_addr)).append(". ");
-                sb.append("Sender: ").append(CCSUtil.toString(sender)).append(". ");
-                sb.append("Coordinator: ").append(coord);
                 log.warn(sb.toString());
+            } else {
+                log.debug(sb.toString());
             }
         }
         // CCS end
