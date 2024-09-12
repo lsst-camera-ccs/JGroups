@@ -1666,7 +1666,7 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
                 sb.append("\n").append(f);
             }
             sb.append("\nPhysical address cache:\n").append(logical_addr_cache.printCache());
-            log.warn(toString());
+            log.warn(sb.toString());
         }
         // CCS end
         

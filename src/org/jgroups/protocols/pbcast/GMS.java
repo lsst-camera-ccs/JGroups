@@ -1059,10 +1059,9 @@ public class GMS extends Protocol implements DiagnosticsHandler.ProbeHandler {
                 if(print_local_addr) {
                     PhysicalAddress physical_addr=print_physical_addrs?
                             (PhysicalAddress)down(new Event(Event.GET_PHYSICAL_ADDRESS, local_addr)) : null;
-                    System.out.println("\n-------------------------------------------------------------------\n" +
-                            "GMS: address=" + local_addr + ", cluster=" + evt.getArg() +
-                            (physical_addr != null? ", physical address=" + physical_addr.printIpAddress() : "") +
-                            "\n-------------------------------------------------------------------");
+                    // CCS begin
+                        log.info("logical address=" + CCSUtil.toString(local_addr) + ", cluster=" + evt.getArg() +", physical: " + CCSUtil.toString(physical_addr));
+                    // CCS end
                 }
                 else {
                     if(log.isDebugEnabled()) {
@@ -1081,13 +1080,6 @@ public class GMS extends Protocol implements DiagnosticsHandler.ProbeHandler {
                 } else {
                     impl.join(local_addr, use_flush);
                 }
-                // CCS begin
-                if (ccs_connect && log.isDebugEnabled()) {
-                    StringBuilder sb = new StringBuilder("GMS.Event.CONNECT.");
-                    sb.append("Local: ").append(CCSUtil.toString(local_addr));
-                    log.debug(sb.toString());
-                }
-                // CCS end
                 return null;  // don't pass down: event has already been passed down
 
             case Event.DISCONNECT:
