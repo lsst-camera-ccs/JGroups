@@ -322,28 +322,28 @@ public abstract class Discovery extends Protocol {
                     }
                 }
 
-                
                 // CCS begin
                 if (ccs_physical || ccs_connect) {
-                    boolean warn = false;
-                    StringBuilder sb = new StringBuilder("Discovery.up(Message): received request. Logical: ").append(CCSUtil.toString(logical_addr)).append(". ");
-                    if (logical_addr == null) {
+                    boolean warn = logical_addr == null;
+                    StringBuilder sb = new StringBuilder("Discovery.up(Message): GET_MBRS_REQ. Logical: ").append(CCSUtil.toString(logical_addr)).append(". ");
+                    if (data == null) {
+                        sb.append("Data = null.");
                         warn = true;
-                    }
-                    String logicalName = data.getLogicalName();
-                    sb.append("Logical name: ").append(logicalName).append(". ");
-                    warn = warn || logical_addr == null || logicalName == null;
-                    PhysicalAddress physAddress = data.getPhysicalAddr();
-                    sb.append("Physical: ").append(CCSUtil.toString(logical_addr)).append(". ");
-                    warn = warn || logical_addr == null || logicalName == null || physAddress == null;
-                    if (physAddress instanceof IpAddress) {
-                        IpAddress ipAddress = (IpAddress) physAddress;
-                        warn = warn || ipAddress.getIpAddress() == null || ipAddress.getPort() <= 0;
+                    } else {
+                        String logicalName = data.getLogicalName();
+                        sb.append("Logical name: ").append(logicalName).append(". ");
+                        PhysicalAddress physAddress = data.getPhysicalAddr();
+                        sb.append("Physical: ").append(CCSUtil.toString(physAddress)).append(". ");
+                        warn = warn || logicalName == null || physAddress == null;
+                        if (physAddress instanceof IpAddress) {
+                            IpAddress ipAddress = (IpAddress) physAddress;
+                            warn = warn || ipAddress.getIpAddress() == null || ipAddress.getPort() <= 0;
+                        }
                     }
                     if (warn) {
                         log.warn(sb.toString());
                     } else {
-                        log.debug(sb.toString());
+                        log.info(sb.toString());
                     }
                 }
                 // CCS end
@@ -380,16 +380,40 @@ public abstract class Discovery extends Protocol {
                 return null;
 
             case PingHeader.GET_MBRS_RSP:
+
+                // CCS begin
+                if (ccs_physical || ccs_connect) {
+                    boolean warn = logical_addr == null;
+                    StringBuilder sb = new StringBuilder("Discovery.up(Message): GET_MBRS_RSP. Logical: ").append(CCSUtil.toString(logical_addr)).append(". ");
+                    if (data == null) {
+                        sb.append("Data = null.");
+                        warn = true;
+                    } else {
+                        Address logAdd = data.getAddress() != null? data.getAddress() : msg.src();
+                        sb.append("Logical: ").append(CCSUtil.toString(logAdd)).append(". ");
+                        String logicalName = data.getLogicalName();
+                        sb.append("Logical name: ").append(logicalName).append(". ");
+                        PhysicalAddress physAddress = data.getPhysicalAddr();
+                        sb.append("Physical: ").append(CCSUtil.toString(physAddress)).append(". ");
+                        warn = warn || logicalName == null || physAddress == null;
+                        if (physAddress instanceof IpAddress) {
+                            IpAddress ipAddress = (IpAddress) physAddress;
+                            warn = warn || ipAddress.getIpAddress() == null || ipAddress.getPort() <= 0;
+                        }
+                    }
+                    if (warn) {
+                        log.warn(sb.toString());
+                    } else {
+                        log.info(sb.toString());
+                    }
+                }
+                // CCS end
+                
                 // add physical address (if available) to transport's cache
                 if(data != null) {
                     log.trace("%s: received GET_MBRS_RSP from %s: %s", local_addr, msg.src(), data);
                     handleDiscoveryResponse(data, msg.src());
                 }
-                // CCS begin
-                else if (ccs_physical || ccs_connect) {
-                    log.warn("Empty discovery response");
-                }
-                // CCS end
                 return null;
 
             default:

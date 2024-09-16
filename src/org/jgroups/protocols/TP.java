@@ -1633,7 +1633,7 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
         if(who_has_cache.addIfAbsentOrExpired(dest)) { // true if address was added
             // CCS begin
             if (ccs_physical) {
-                log.debug("TP: AbsentOrExpired " + CCSUtil.toString(dest));
+                log.info("TP.sendToSingleMember: AbsentOrExpired: " + CCSUtil.toString(dest));
             }
             // CCS end
             // FIND_MBRS must return quickly
@@ -1850,11 +1850,26 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
             }
         }
         // CCS end
-        return logical_addr != null && physical_addr != null &&
+        boolean out = logical_addr != null && physical_addr != null &&
           overwrite? logical_addr_cache.add(logical_addr, physical_addr) : logical_addr_cache.addIfAbsent(logical_addr, physical_addr);
+        // CCS begin
+        if (out && ccs_physical) {
+            log.info("TP: adding physical address to cache: Logical: "+ CCSUtil.toString(logical_addr) +", Physical: "+ CCSUtil.toString(physical_addr));
+        }
+        // CCS end
+        return out;
     }
 
     protected PhysicalAddress getPhysicalAddressFromCache(Address logical_addr) {
+        // CCS begin
+        if (ccs_physical) {
+            PhysicalAddress out = logical_addr != null? logical_addr_cache.get(logical_addr) : null;
+            if (out == null) {
+                log.info("TP: no physical address in cache: "+ CCSUtil.toString(logical_addr));
+            }
+            return out;
+        } else
+        // CCS end
         return logical_addr != null? logical_addr_cache.get(logical_addr) : null;
     }
 
@@ -1864,6 +1879,14 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
 
     protected void removeLogicalAddressFromCache(Address logical_addr) {
         if(logical_addr != null) {
+
+            // CCS begin
+            if (ccs_physical) {
+                Address add = logical_addr_cache.get(logical_addr);
+                log.info("TP: removing physical address from cache: Logical: " + CCSUtil.toString(logical_addr) + ", Physical: " + CCSUtil.toString(add));
+            }
+            // CCS end
+            
             logical_addr_cache.remove(logical_addr);
             fetchLocalAddresses();
         }
@@ -1872,6 +1895,13 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
     /** Clears the cache. <em>Do not use, this is only for unit testing !</em> */
     @ManagedOperation(description="Clears the logical address cache; only used for testing")
     public void clearLogicalAddressCache() {
+
+        // CCS begin
+        if (ccs_physical) {
+            log.info("TP: clearing physical address cache.");
+        }
+        // CCS end
+            
         logical_addr_cache.clear(true);
         fetchLocalAddresses();
     }

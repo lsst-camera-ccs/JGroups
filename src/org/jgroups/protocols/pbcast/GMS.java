@@ -880,7 +880,7 @@ public class GMS extends Protocol implements DiagnosticsHandler.ProbeHandler {
             case GmsHeader.JOIN_REQ:
                 // CCS begin
                 if (ccs_connect) {
-                    log.info("GMS: received JOIN_REQ from " + CCSUtil.toString(msg.getSrc()));
+                    log.info("GMS: JOIN_REQ from " + CCSUtil.toString(hdr.getMember()) + " from " + CCSUtil.toString(msg.getSrc()));
                 }
                 // CCS end
                 view_handler.add(new Request(Request.JOIN, hdr.mbr, null, hdr.useFlushIfPresent));
@@ -1060,7 +1060,7 @@ public class GMS extends Protocol implements DiagnosticsHandler.ProbeHandler {
                     PhysicalAddress physical_addr=print_physical_addrs?
                             (PhysicalAddress)down(new Event(Event.GET_PHYSICAL_ADDRESS, local_addr)) : null;
                     // CCS begin
-                        log.info("logical address=" + CCSUtil.toString(local_addr) + ", cluster=" + evt.getArg() +", physical: " + CCSUtil.toString(physical_addr));
+                        log.info("GMS.down CONNECT, local address=" + CCSUtil.toString(local_addr) + ", cluster=" + evt.getArg() +", physical: " + CCSUtil.toString(physical_addr));
                     // CCS end
                 }
                 else {

@@ -9,6 +9,7 @@ import org.jgroups.util.Responses;
 
 import java.io.InterruptedIOException;
 import java.util.List;
+import java.util.stream.Collectors;
 import org.jgroups.ccs.CCSUtil;
 
 
@@ -42,25 +43,10 @@ public class PING extends Discovery {
 
     protected void sendDiscoveryRequest(String cluster_name, List<Address> members_to_find, boolean initial_discovery) throws Exception {
         
-        // CCS begin
-        StringBuilder sb = new StringBuilder();
-        if (ccs_physical || ccs_connect) {
-            sb.append("PING.sendDiscoveryRequest, initial_discovery=").append(initial_discovery);
-            sb.append(", members_to_find").append(members_to_find).append(".");
-
-        }
-        // CCS end
-        
         PingData data=null;
 
         if(!use_ip_addrs || !initial_discovery) {
             PhysicalAddress physical_addr=(PhysicalAddress)down(new Event(Event.GET_PHYSICAL_ADDRESS, local_addr));
-            // CCS begin
-            if (ccs_physical || ccs_connect) {
-                sb.append("My physical: ").append(CCSUtil.toString(physical_addr)).append(". ");
-            } 
-            // CCS end
-
             // https://issues.jboss.org/browse/JGRP-1670
             data=new PingData(local_addr, false, NameCache.get(local_addr), physical_addr);
             if(members_to_find != null && members_to_find.size() <= max_members_in_discovery_request)
@@ -79,9 +65,21 @@ public class PING extends Discovery {
         
         // CCS begin
         if (ccs_physical || ccs_connect) {
-            sb.append("Message from ").append(CCSUtil.toString(msg.getSrc()));
-            sb.append(" to ").append(CCSUtil.toString(msg.getSrc())).append(".");
-            log.info(sb.toString());
+            StringBuilder sb = new StringBuilder();
+            sb.append("PING.sendDiscoveryRequest, initial: ").append(initial_discovery).append(", members: ").append(members_to_find).append(".");
+            sb.append(" Cluster: " ).append(cluster_name).append(".");
+            if (data != null) {
+                sb.append(" Sender: ").append(data.getLogicalName()).append(", Logical: ").append(CCSUtil.toString(data.getAddress())).append(", Physical: ").append(CCSUtil.toString(data.getPhysicalAddr()));
+                sb.append(", coord: ").append(data.isCoord()).append(", server: ").append(data.isServer()).append(".");
+                if (data.mbrs() != null) {
+                    sb.append(" Members: ").append(String.join(", ", data.mbrs().stream().map(m -> CCSUtil.toString(m)).collect(Collectors.toList()))).append(".");
+                }
+            }
+            if (data == null || cluster_name == null || data.getLogicalName() == null || data.getAddress() == null || !CCSUtil.isValid(data.getPhysicalAddr())) {
+                log.warn(sb.toString());
+            } else {
+                log.info(sb.toString());
+            }
         }
         // CCS end
         
