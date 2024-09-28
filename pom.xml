@@ -13,7 +13,7 @@
     <artifactId>jgroups</artifactId>
     <packaging>bundle</packaging>
     <name>JGroups</name>
-    <version>4.211.5-SNAPSHOT</version>
+    <version>4.211.5</version>
     <url>http://www.jgroups.org</url>
 
     <properties>
@@ -47,7 +47,7 @@
         <url>https://github.com/lsst-camera-ccs/JGroups</url>
         <connection>scm:git:git://github.com/lsst-camera-ccs/JGroups.git</connection>
         <developerConnection>scm:git:ssh://git@github.com/lsst-camera-ccs/JGroups.git</developerConnection>
-        <tag>HEAD</tag>
+        <tag>jgroups-4.211.5</tag>
     </scm>
 
     <distributionManagement>
