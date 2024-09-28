@@ -64,6 +64,7 @@ public abstract class Protocol {
 
     static public final boolean ccs_physical = System.getProperty("ccs.jg.physical") != null;
     static public final boolean ccs_connect = System.getProperty("ccs.jg.connect") != null;
+    static public final boolean ccs_retransmit = System.getProperty("ccs.jg.retransmit") != null;
     // CCS end
 
 

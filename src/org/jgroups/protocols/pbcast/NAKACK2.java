@@ -23,6 +23,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import org.jgroups.ccs.CCSUtil;
 
 
 /**
@@ -901,6 +902,16 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
      */
     protected void handleXmitReq(Address xmit_requester, SeqnoList missing_msgs, Address original_sender) {
         log.trace("%s <-- %s: XMIT(%s%s)", local_addr, xmit_requester, original_sender, missing_msgs);
+        
+        // CCS begin
+        if (ccs_retransmit) {
+            if (original_sender.equals(local_addr)) {
+                log.info("NAKACK2: retransmit request from "+ CCSUtil.toString(xmit_requester) +" for "+ missing_msgs);
+            } else {
+                log.warn("NAKACK2: handling retransmit request from "+ CCSUtil.toString(xmit_requester) +" for "+ CCSUtil.toString(original_sender));
+            }
+        }
+        // CCS end
 
         if(stats)
             xmit_reqs_received.add(missing_msgs.size());

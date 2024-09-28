@@ -24,6 +24,7 @@ import java.net.SocketTimeoutException;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
 import org.jgroups.ccs.CCSUtil;
 
@@ -59,7 +60,6 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
     public static final    byte    MULTICAST=2; // message is a multicast (versus a unicast) message when set
     public static final    int     MSG_OVERHEAD=Global.SHORT_SIZE + Global.BYTE_SIZE; // version + flags
     protected static final long    MIN_WAIT_BETWEEN_DISCOVERIES=TimeUnit.NANOSECONDS.convert(10, TimeUnit.SECONDS);  // ns
-
 
     /* ------------------------------------------ JMX and Properties  ------------------------------------------ */
     @LocalAddress
@@ -1611,11 +1611,6 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
     protected void sendToSingleMember(final Address dest, byte[] buf, int offset, int length) throws Exception {
         if(dest instanceof PhysicalAddress) {
             sendUnicast((PhysicalAddress)dest, buf, offset, length);
-            // CCS begin
-            if (ccs_physical || ccs_connect) {
-                log.debug("TP: sendToSingleMember, specified physical address: "+ CCSUtil.toString(dest));
-            } 
-            // CCS end
             return;
         }
 
@@ -1623,7 +1618,7 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
         if((physical_dest=getPhysicalAddressFromCache(dest)) != null) {
             sendUnicast(physical_dest,buf,offset,length);
             // CCS begin
-            if (ccs_physical || ccs_connect) {
+            if (ccs_physical) {
                 log.debug("TP: sendToSingleMember "+ CCSUtil.toString(dest) +", physical address from cache: "+ CCSUtil.toString(physical_dest));
             } 
             // CCS end
@@ -1643,11 +1638,6 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
                     if(data.getAddress() != null && data.getAddress().equals(dest)) {
                         if((physical_dest=data.getPhysicalAddr()) != null) {
                             sendUnicast(physical_dest, buf, offset, length);
-                            // CCS begin
-                            if (ccs_physical || ccs_connect) {
-                                log.debug("TP: sendToSingleMember " + CCSUtil.toString(dest) + ", physical address from discover: " + CCSUtil.toString(physical_dest));
-                            }
-                            // CCS end
                             return;
                         }
                     }
@@ -1660,13 +1650,34 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
         }
         
         // CCS begin
-        if (ccs_physical || ccs_connect) {
-            StringBuilder sb = new StringBuilder("TP: failed sendToSingleMember "+ CCSUtil.toString(dest));
-            for (StackTraceElement f : Thread.currentThread().getStackTrace()) {
-                sb.append("\n").append(f);
+        if (ccs_physical) {
+            if (logical_addr_cache != null && dest != null) {
+                int where = 0;
+                physical_dest = logical_addr_cache.get(dest);
+                if (physical_dest == null) {
+                    for (Map.Entry<Address,PhysicalAddress> e : logical_addr_cache.contents(false).entrySet()) {
+                        Address a = e.getKey();
+                        if (dest.equals(a)) {
+                            physical_dest = e.getValue();
+                            where = 1;
+                            break;
+                        } else if (dest.toString().equals(a.toString())) {
+                            log.warn("TP: stale cache, wanted "+ CCSUtil.toString(dest) +", found "+ CCSUtil.toString(a));
+                        }
+                    }
+                }
+                if (physical_dest == null) {
+                    LockSupport.parkNanos(10000);
+                    physical_dest = logical_addr_cache.get(dest);
+                    where = 2;
+                }
+                if (physical_dest == null) {
+                    log.warn("TP: failed sendToSingleMember "+ CCSUtil.toString(dest));
+                } else {
+                    log.info("TP: recovered sendToSingleMember "+ where +", logical "+ CCSUtil.toString(dest) +", physical "+ CCSUtil.toString(physical_dest));
+                    sendUnicast(physical_dest, buf, offset, length);
+                }
             }
-            sb.append("\nPhysical address cache:\n").append(logical_addr_cache.printCache());
-            log.warn(sb.toString());
         }
         // CCS end
         
