@@ -133,18 +133,22 @@ public abstract class NioBaseServer extends BaseServer {
                     try {
                         if(!key.isValid())
                             continue;
-                        if(key.isReadable())
-                            conn.receive();
-                        if(key.isWritable())
-                            conn.send();
-                        if(key.isAcceptable())
-                            handleAccept(key);
-                        else if(key.isConnectable()) {
+                        // a key can be connectable *and* readable (https://issues.redhat.com/browse/JGRP-2531)
+                        if(key.isConnectable()) {
                             SocketChannel ch=(SocketChannel)key.channel();
-                            if(ch.finishConnect() || ch.isConnected()) {
+                            // https://issues.redhat.com/browse/JGRP-2727
+                            if((ch.isConnectionPending() && ch.finishConnect()) || ch.isConnected()) {
                                 conn.clearSelectionKey(SelectionKey.OP_CONNECT);
                                 conn.connected(true);
                             }
+                        }
+                        else if(key.isAcceptable())
+                            handleAccept(key);
+                        else {
+                            if (key.isReadable())
+                                conn.receive();
+                            if (key.isWritable())
+                                conn.send();
                         }
                     }
                     catch(Throwable ex) {

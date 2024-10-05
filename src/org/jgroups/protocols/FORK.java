@@ -104,6 +104,14 @@ public class FORK extends Protocol {
         switch(evt.getType()) {
             case Event.SET_LOCAL_ADDRESS:
                 local_addr=evt.getArg();
+                for(Protocol prot: fork_stacks.values()) {
+                    if(prot instanceof ForkProtocol) {
+                        ForkProtocol fp=(ForkProtocol)prot;
+                        ProtocolStack st=fp.getProtocolStack();
+                        for(Protocol p: st.getProtocols())
+                            p.down(evt);
+                    }
+                }
                 break;
         }
         return down_prot.down(evt);
@@ -205,7 +213,7 @@ public class FORK extends Protocol {
 
 
     protected void getStateFrom(JChannel channel, Protocol prot, String stack, String ch, DataOutputStream out) throws Exception {
-        ByteArrayDataOutputStream output=new ByteArrayDataOutputStream(1024);
+        ByteArrayDataOutputStream output=new ByteArrayDataOutputStream(1024, true);
         OutputStreamAdapter out_ad=new OutputStreamAdapter(output);
         Event evt=new Event(Event.STATE_TRANSFER_OUTPUTSTREAM, out_ad);
         if(channel != null)

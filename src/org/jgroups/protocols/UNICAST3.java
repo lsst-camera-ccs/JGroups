@@ -23,6 +23,9 @@ import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
 import java.util.stream.Stream;
 
+import static org.jgroups.Message.TransientFlag.DONT_LOOPBACK;
+import static org.jgroups.Message.TransientFlag.OOB_DELIVERED;
+
 
 /**
  * Reliable unicast protocol using a combination of positive and negative acks. See docs/design/UNICAST3.txt for details.
@@ -78,6 +81,8 @@ public class UNICAST3 extends Protocol implements AgeOutCache.Handler<Address> {
       "the max bundle size in the transport")
     protected int     max_xmit_req_size;
 
+    @Property(description="The max size of a message batch when delivering messages. 0 is unbounded")
+    protected int max_batch_size;
     /* --------------------------------------------- JMX  ---------------------------------------------- */
 
 
@@ -134,6 +139,8 @@ public class UNICAST3 extends Protocol implements AgeOutCache.Handler<Address> {
     /** Keep track of when a SEND_FIRST_SEQNO message was sent to a given sender */
     protected ExpiryCache<Address>         last_sync_sent=null;
 
+    // Queues messages until a {@link ReceiverEntry} has been created. Queued messages are then removed from
+    // the cache and added to the ReceiverEntry
     protected final MessageCache           msg_cache=new MessageCache();
 
     protected static final Message         DUMMY_OOB_MSG=new Message().setFlag(Message.Flag.OOB);
@@ -143,8 +150,8 @@ public class UNICAST3 extends Protocol implements AgeOutCache.Handler<Address> {
         && (!msg.isFlagSet(Message.Flag.OOB) || msg.setTransientFlagIfAbsent(Message.TransientFlag.OOB_DELIVERED))
         && !(msg.isTransientFlagSet(Message.TransientFlag.DONT_LOOPBACK) && local_addr != null && local_addr.equals(msg.src()));
 
-    protected static final Predicate<Message> dont_loopback_filter=
-      msg -> msg != null && msg.isTransientFlagSet(Message.TransientFlag.DONT_LOOPBACK);
+    protected static final Predicate<Message> dont_loopback_filter=m -> m != null
+          && (m.isTransientFlagSet(DONT_LOOPBACK) || m == DUMMY_OOB_MSG || m.isTransientFlagSet(OOB_DELIVERED));
 
     protected static final BiConsumer<MessageBatch,Message> BATCH_ACCUMULATOR=MessageBatch::add;
 
@@ -480,7 +487,7 @@ public class UNICAST3 extends Protocol implements AgeOutCache.Handler<Address> {
             if(hdr.first)
                 entry=getReceiverEntry(sender, hdr.seqno(), hdr.first, hdr.connId());
             else if(entry == null) {
-                msg_cache.cache(sender, msg);
+                msg_cache.add(sender, msg);
                 log.trace("%s: cached %s#%d", local_addr, sender, hdr.seqno());
             }
         }
@@ -490,7 +497,7 @@ public class UNICAST3 extends Protocol implements AgeOutCache.Handler<Address> {
                 sendRequestForFirstSeqno(sender);
             else {
                 if(!msg_cache.isEmpty()) { // quick and dirty check
-                    List<Message> queued_msgs=msg_cache.drain(sender);
+                    Collection<Message> queued_msgs=msg_cache.drain(sender);
                     if(queued_msgs != null)
                         addQueuedMessages(sender, entry, queued_msgs);
                 }
@@ -565,7 +572,7 @@ public class UNICAST3 extends Protocol implements AgeOutCache.Handler<Address> {
                 Set<Address> non_members=new HashSet<>(send_table.keySet());
                 non_members.addAll(recv_table.keySet());
                 members=new_members;
-                non_members.removeAll(new_members);
+                new_members.forEach(non_members::remove);
                 if(cache != null)
                     cache.removeAll(new_members);
 
@@ -611,7 +618,6 @@ public class UNICAST3 extends Protocol implements AgeOutCache.Handler<Address> {
             msg.src(local_addr); // this needs to be done so we can check whether the message sender is the local_addr
 
         SenderEntry entry=getSenderEntry(dst);
-
         boolean dont_loopback_set=msg.isTransientFlagSet(Message.TransientFlag.DONT_LOOPBACK)
           && dst.equals(local_addr);
         short send_conn_id=entry.connId();
@@ -741,12 +747,12 @@ public class UNICAST3 extends Protocol implements AgeOutCache.Handler<Address> {
     protected void handleDataReceived(final Address sender, long seqno, short conn_id,  boolean first, final Message msg) {
         ReceiverEntry entry=getReceiverEntry(sender, seqno, first, conn_id);
         if(entry == null) {
-            msg_cache.cache(sender, msg);
+            msg_cache.add(sender, msg);
             log.trace("%s: cached %s#%d", local_addr, sender, seqno);
             return;
         }
         if(!msg_cache.isEmpty()) { // quick and dirty check
-            List<Message> queued_msgs=msg_cache.drain(sender);
+            Collection<Message> queued_msgs=msg_cache.drain(sender);
             if(queued_msgs != null)
                 addQueuedMessages(sender, entry, queued_msgs);
         }
@@ -777,7 +783,7 @@ public class UNICAST3 extends Protocol implements AgeOutCache.Handler<Address> {
         }
     }
 
-    protected void addQueuedMessages(final Address sender, final ReceiverEntry entry, List<Message> queued_msgs) {
+    protected void addQueuedMessages(final Address sender, final ReceiverEntry entry, Collection<Message> queued_msgs) {
         for(Message msg: queued_msgs) {
             UnicastHeader3 hdr=msg.getHeader(this.id);
             if(hdr.conn_id != entry.conn_id) {
@@ -820,7 +826,7 @@ public class UNICAST3 extends Protocol implements AgeOutCache.Handler<Address> {
     protected void processInternalMessage(final Table<Message> win, final Address sender) {
         // If there are other msgs, tell the regular thread pool to handle them (https://issues.jboss.org/browse/JGRP-1732)
         if(!win.isEmpty() && win.getAdders().get() == 0) // just a quick&dirty check, can also be incorrect
-            getTransport().submitToThreadPool(() -> removeAndDeliver(win, sender), true);
+            getTransport().submitToThreadPool(() -> removeAndDeliver(win, sender), false);
     }
 
 
@@ -873,7 +879,7 @@ public class UNICAST3 extends Protocol implements AgeOutCache.Handler<Address> {
         do {
             try {
                 batch.reset(); // sets index to 0: important as batch delivery may not remove messages from batch!
-                win.removeMany(true, 0, drop_oob_and_dont_loopback_msgs_filter,
+                win.removeMany(true, max_batch_size, drop_oob_and_dont_loopback_msgs_filter,
                                batch_creator, BATCH_ACCUMULATOR);
             }
             catch(Throwable t) {
@@ -1304,7 +1310,14 @@ public class UNICAST3 extends Protocol implements AgeOutCache.Handler<Address> {
         }
     }
 
+    protected void sendAckFor(Address dest) {
+        ReceiverEntry entry=recv_table.get(dest);
+        Table<Message> win=entry != null? entry.msgs : null;
 
+        // receiver: send ack for received messages if needed
+        if(win != null && entry.sendAck())// sendAck() resets send_ack to false
+            sendAck(dest, win.getHighestDeliverable(), entry.connId());
+    }
 
     protected void update(Entry entry, int num_received) {
         if(conn_expiry_timeout > 0)
@@ -1354,9 +1367,9 @@ public class UNICAST3 extends Protocol implements AgeOutCache.Handler<Address> {
     }
 
     protected final class SenderEntry extends Entry {
-        final AtomicLong       sent_msgs_seqno=new AtomicLong(DEFAULT_FIRST_SEQNO);   // seqno for msgs sent by us
-        protected final long[] watermark={0,0}; // the highest acked and highest sent seqno
-        protected int          last_timestamp;  // to prevent out-of-order ACKs from a receiver
+        final AtomicLong sent_msgs_seqno=new AtomicLong(DEFAULT_FIRST_SEQNO);   // seqno for msgs sent by us
+        final long[]     watermark={0,0}; // the highest acked and highest sent seqno
+        int              last_timestamp;  // to prevent out-of-order ACKs from a receiver
 
         public SenderEntry(short send_conn_id) {
             super(send_conn_id, new Table<>(xmit_table_num_rows, xmit_table_msgs_per_row, 0,
@@ -1367,7 +1380,7 @@ public class UNICAST3 extends Protocol implements AgeOutCache.Handler<Address> {
         SenderEntry watermark(long ha, long hs) {watermark[0]=ha; watermark[1]=hs; return this;}
 
         /** Updates last_timestamp. Returns true of the update was in order (ts > last_timestamp) */
-        protected synchronized boolean updateLastTimestamp(int ts) {
+        private synchronized boolean updateLastTimestamp(int ts) {
             if(last_timestamp == 0) {
                 last_timestamp=ts;
                 return true;
@@ -1390,7 +1403,7 @@ public class UNICAST3 extends Protocol implements AgeOutCache.Handler<Address> {
     }
 
     protected final class ReceiverEntry extends Entry {
-        protected volatile boolean  send_ack;
+        private volatile boolean  send_ack;
 
         public ReceiverEntry(Table<Message> received_msgs, short recv_conn_id) {
             super(recv_conn_id, received_msgs);
@@ -1432,48 +1445,5 @@ public class UNICAST3 extends Protocol implements AgeOutCache.Handler<Address> {
             return UNICAST3.class.getSimpleName() + ": RetransmitTask (interval=" + xmit_interval + " ms)";
         }
     }
-
-    /**
-     * Used to queue messages until a {@link ReceiverEntry} has been created. Queued messages are then removed from
-     * the cache and added to the ReceiverEntry
-     */
-    protected class MessageCache {
-        private final Map<Address,List<Message>> map=new ConcurrentHashMap<>();
-        private volatile boolean                 is_empty=true;
-
-        protected MessageCache cache(Address sender, Message msg) {
-            List<Message> list=map.computeIfAbsent(sender, addr -> new ArrayList<>());
-            list.add(msg);
-            is_empty=false;
-            return this;
-        }
-
-        protected List<Message> drain(Address sender) {
-            List<Message> list=map.remove(sender);
-            if(map.isEmpty())
-                is_empty=true;
-            return list;
-        }
-
-        protected MessageCache clear() {
-            map.clear();
-            is_empty=true;
-            return this;
-        }
-
-        /** Returns a count of all messages */
-        protected int size() {
-            return map.values().stream().mapToInt(Collection::size).sum();
-        }
-
-        protected boolean isEmpty() {
-            return is_empty;
-        }
-
-        public String toString() {
-            return String.format("%d message(s)", size());
-        }
-    }
-
 
 }

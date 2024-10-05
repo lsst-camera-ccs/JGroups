@@ -2,6 +2,8 @@
 package org.jgroups.blocks;
 
 import org.jgroups.*;
+import org.jgroups.protocols.DROP;
+import org.jgroups.protocols.pbcast.GMS;
 import org.jgroups.stack.Protocol;
 import org.jgroups.util.Buffer;
 import org.jgroups.util.Util;
@@ -9,10 +11,9 @@ import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
 import java.net.UnknownHostException;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.Arrays;
+import java.util.Objects;
+import java.util.concurrent.*;
 
 /**
  * @author Bela Ban
@@ -122,7 +123,7 @@ public class UnicastRequestTest {
         UnicastRequest<Long> req=new UnicastRequest<>(corr, a, RequestOptions.SYNC().timeout(5000));
         corr.setRequest(req);
         View new_view=View.create(b, 5, b,c);
-        req.viewChange(new_view);
+        req.viewChange(new_view, false);
 
         try {
             req.execute(buf, true);
@@ -138,6 +139,47 @@ public class UnicastRequestTest {
         catch(ExecutionException ex) {
             System.out.printf("received %s as expected\n", ex);
             assert ex.getCause() instanceof SuspectedException;
+        }
+    }
+
+    public void testMissingResponseDueToMergeViewUnicast() throws Exception {
+        try(JChannel ch1=create("A"); JChannel ch2=create("B");
+            MessageDispatcher md1=new MessageDispatcher(ch1, r -> "from A");
+            MessageDispatcher md2=new MessageDispatcher(ch2, r -> "from B")) {
+            Util.waitUntilAllChannelsHaveSameView(10000, 500, ch1,ch2);
+
+            Address a_addr=ch1.getAddress(), b_addr=ch2.getAddress();
+            long view_id=ch1.getView().getViewId().getId();
+
+            // the DROP protocol drops the unicast response from B -> A
+            DROP drop=new DROP().addDownFilter(m -> Objects.equals(m.getDest(), a_addr));
+            ch2.getProtocolStack().insertProtocolAtTop(drop);
+
+            byte[] array=Util.objectToByteBuffer("req from A");
+            Buffer buffer=new Buffer(array, 0, array.length);
+            CompletableFuture<Object> f=md1.sendMessageWithFuture(b_addr, buffer, RequestOptions.SYNC());
+
+            // inject view {B} into B; this causes B to drop connections to A and remove A from B's retransmission tables
+            View v=View.create(b_addr,  ++view_id, b_addr),
+              mv=new MergeView(a_addr, ++view_id, Arrays.asList(a_addr, b_addr), Arrays.asList(ch1.getView(), v));
+            GMS gms=ch2.getProtocolStack().findProtocol(GMS.class);
+            gms.installView(v);
+            assert ch2.getView().size() == 1;
+
+            // now inject the MergeView in B and A
+            gms.installView(mv);
+            GMS tmp=ch1.getProtocolStack().findProtocol(GMS.class);
+            tmp.installView(mv);
+
+            try {
+                f.get(5, TimeUnit.SECONDS);
+                assert false: "should have thrown a SuspectedException";
+            }
+            catch(ExecutionException ex) {
+                if(ex.getCause() instanceof SuspectedException)
+                    System.out.printf("received exception as expected: %s\n", ex);
+                else throw ex;
+            }
         }
     }
 
@@ -173,6 +215,9 @@ public class UnicastRequestTest {
     }
 
 
+    protected static JChannel create(String name) throws Exception {
+        return new JChannel(Util.getTestStack()).name(name).connect("demo");
+    }
 
     protected static class MyCorrelator extends RequestCorrelator {
         protected UnicastRequest request;
@@ -239,7 +284,7 @@ public class UnicastRequestTest {
                         request.receiveResponse(retval, sender, false);
                     }
                     else if(obj instanceof View)
-                        request.viewChange((View)obj);
+                        request.viewChange((View)obj, false);
                 }
             }
         }

@@ -10,12 +10,12 @@ import org.jgroups.jmx.AdditionalJmxObjects;
 import org.jgroups.logging.Log;
 import org.jgroups.logging.LogFactory;
 import org.jgroups.stack.*;
+import org.jgroups.util.Bits;
 import org.jgroups.util.ThreadFactory;
 import org.jgroups.util.UUID;
 import org.jgroups.util.*;
 
-import java.io.DataInput;
-import java.io.InterruptedIOException;
+import java.io.*;
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
@@ -169,6 +169,11 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
     @Property(name="thread_pool.keep_alive_time",description="Timeout in milliseconds to remove idle threads from pool")
     protected long thread_pool_keep_alive_time=30000;
 
+    @Property(description="When an internal message cannot be processed because of a full internal pool, a new thread "
+      + "is created to process the message. Setting this value to false disables this, and the message will be " +
+      "discarded (like regular messages)")
+    protected boolean spawn_thread_on_full_pool;
+
 
     @Property(description="Interval (in ms) at which the time service updates its timestamp. 0 disables the time service")
     protected long time_service_interval=500;
@@ -231,6 +236,10 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
     @Property(description="The number of times a thread pool needs to be full before a thread dump is logged")
     protected int                 thread_dumps_threshold=1;
 
+    @Property(description="Path to which the thread dump will be written. Ignored if null",
+      systemProperty="jgroups.threaddump.path")
+    protected String              thread_dump_path;
+
     // Incremented when a message is rejected due to a full thread pool. When this value exceeds thread_dumps_threshold,
     // the threads will be dumped at FATAL level, and thread_dumps will be reset to 0
     protected final AtomicInteger thread_dumps=new AtomicInteger();
@@ -246,6 +255,10 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
     @Property(description="The type of bundler used (\"ring-buffer\", \"transfer-queue\" (default), \"sender-sends\" or " +
       "\"no-bundler\") or the fully qualified classname of a Bundler implementation")
     protected String bundler_type="transfer-queue";
+
+    @Property(description="When the queue is full, senders will drop a message rather than wait until space " +
+      "is available (https://issues.redhat.com/browse/JGRP-2765). Currently only applicable to TransferQueueBundler")
+    protected boolean drop_when_full;
 
     @Property(description="The max number of elements in a bundler if the bundler supports size limitations")
     protected int bundler_capacity=16384;
@@ -274,6 +287,8 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
     public boolean          useFibers()                         {return use_fibers;}
     public int              getThreadDumpsThreshold()           {return thread_dumps_threshold;}
     public <T extends TP> T setThreadDumpsThreshold(int t)      {this.thread_dumps_threshold=t; return (T)this;}
+    public boolean          getDropWhenFull()                   {return drop_when_full;}
+    public <T extends TP> T setDropWhenFull(boolean b)          {drop_when_full=b; return (T)this;}
 
 
     @ManagedAttribute public int getBundlerBufferSize() {
@@ -1285,7 +1300,7 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
         switch(type) {
             case "transfer-queue":
             case "tq":
-                return new TransferQueueBundler(bundler_capacity);
+                return new TransferQueueBundler(bundler_capacity).setDropWhenFull(drop_when_full);
             case "simplified-transfer-queue":
             case "stq":
                 return new SimplifiedTransferQueueBundler(bundler_capacity);
@@ -1338,7 +1353,6 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
         // changed to fix http://jira.jboss.com/jira/browse/JGRP-506
         boolean internal=msg.isFlagSet(Message.Flag.INTERNAL);
         boolean oob=msg.isFlagSet(Message.Flag.OOB);
-        // submitToThreadPool(() -> passMessageUp(copy, null, false, multicast, false), internal);
         msg_processing_policy.loopback(msg, oob, internal);
     }
 
@@ -1534,9 +1548,24 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
                 msg_stats.incrNumRejectedMsgs(1);
                 // https://issues.redhat.com/browse/JGRP-2403
                 if(thread_dumps.incrementAndGet() == thread_dumps_threshold) {
-                    log.fatal("%s: thread pool is full (max=%d, active=%d); " +
-                                "thread dump (dumped once, until thread_dump is reset):\n%s",
-                              local_addr, getThreadPoolMaxThreads(), getThreadPoolSize(), Util.dumpThreads());
+                    String thread_dump=Util.dumpThreads();
+                    if(thread_dump_path != null) {
+                        File f=new File(thread_dump_path, "jgroups_threaddump_" + System.currentTimeMillis() + ".txt");
+                        try(BufferedWriter writer=new BufferedWriter(new FileWriter(f))) {
+                            writer.write(thread_dump);
+                            log.fatal("%s: thread pool is full (max=%d, active=%d); thread dump (dumped once, until thread_dump is reset): %s",
+                                      local_addr, thread_pool_max_threads, getThreadPoolSize(), f.getAbsolutePath());
+                        }
+                        catch(IOException e) {
+                            log.warn("%s: cannot generate the thread dump to %s: %s", local_addr, f.getAbsolutePath(), e);
+                            log.fatal("%s: thread pool is full (max=%d, active=%d); " +
+                                        "thread dump (dumped once, until thread_dump is reset):\n%s",
+                                      local_addr, thread_pool_max_threads, getThreadPoolSize(), thread_dump);
+                        }
+                    }
+                    else
+                        log.fatal("%s: thread pool is full (max=%d, active=%d); thread dump (dumped once, until thread_dump is reset):\n%s",
+                                  local_addr, thread_pool_max_threads, getThreadPoolSize(), thread_dump);
                 }
                 return false;
             }
@@ -1544,8 +1573,12 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
             if(forward_to_internal_pool && internal_pool != null)
                 return submitToThreadPool(internal_pool, task, true, false);
             else {
-                msg_stats.incrNumThreadsSpawned(1);
-                return runInNewThread(task);
+                if(spawn_thread_on_full_pool) {
+                    msg_stats.incrNumThreadsSpawned(1);
+                    return runInNewThread(task);
+                }
+                msg_stats.incrNumRejectedMsgs(1);
+                return false;
             }
         }
         catch(Throwable t) {

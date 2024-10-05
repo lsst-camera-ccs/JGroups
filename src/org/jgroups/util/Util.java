@@ -17,14 +17,15 @@ import org.jgroups.stack.IpAddress;
 import org.jgroups.stack.IpAddressUUID;
 import org.jgroups.stack.Protocol;
 import org.jgroups.stack.ProtocolStack;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 
 import javax.management.MBeanServer;
 import javax.management.MBeanServerFactory;
 import java.io.*;
 import java.lang.annotation.Annotation;
-import java.lang.management.ManagementFactory;
-import java.lang.management.ThreadInfo;
-import java.lang.management.ThreadMXBean;
+import java.lang.management.*;
 import java.lang.reflect.*;
 import java.net.*;
 import java.nio.ByteBuffer;
@@ -35,10 +36,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.BiConsumer;
-import java.util.function.IntFunction;
-import java.util.function.Predicate;
-import java.util.function.Supplier;
+import java.util.function.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -177,7 +175,7 @@ public class Util {
     }
 
     public static boolean fibersAvailable() {
-        return VIRTUAL != null;
+        return ThreadCreator.hasVirtualThreads();
     }
 
     /**
@@ -363,6 +361,16 @@ public class Util {
         }
         String error_msg=String.format("Timeout %d kicked in%s", timeout, msg != null? ": " + msg.get() : "");
         throw new TimeoutException(error_msg);
+    }
+
+    public static boolean waitUntilTrue(long timeout, long interval, BooleanSupplier condition) {
+        long target_time=System.currentTimeMillis() + timeout;
+        while(System.currentTimeMillis() <= target_time) {
+            if(condition.getAsBoolean())
+                return true;
+            Util.sleep(interval);
+        }
+        return false;
     }
 
     public static boolean allChannelsHaveSameView(JChannel... channels) {
@@ -1820,7 +1828,7 @@ public class Util {
     public static String readStringFromStdin(String message) throws Exception {
         System.out.print(message);
         System.out.flush();
-        System.in.skip(System.in.available());
+        System.in.skip(available(System.in));
         BufferedReader reader=new BufferedReader(new InputStreamReader(System.in));
         String line=reader.readLine();
         return line != null? line.trim() : null;
@@ -1968,7 +1976,7 @@ public class Util {
 
         try {
             int ret=System.in.read();
-            System.in.skip(System.in.available());
+            System.in.skip(available(System.in));
             return ret;
         }
         catch(IOException e) {
@@ -1976,6 +1984,14 @@ public class Util {
         }
     }
 
+    public static int available(InputStream in) {
+        try {
+            return in.available();
+        }
+        catch(Exception ex) {
+            return 0;
+        }
+    }
 
     public static long micros() {
         return nanoTime() / 1000;
@@ -2181,40 +2197,65 @@ public class Util {
 
 
     public static String dumpThreads() {
-        StringBuilder sb=new StringBuilder();
         ThreadMXBean bean=ManagementFactory.getThreadMXBean();
-        long[] ids=bean.getAllThreadIds();
-        _printThreads(bean,ids,sb);
-        long[] deadlocks=bean.findDeadlockedThreads();
-        if(deadlocks != null && deadlocks.length > 0) {
-            sb.append("deadlocked threads:\n");
-            _printThreads(bean,deadlocks,sb);
-        }
+        ThreadInfo[] threads=bean.dumpAllThreads(true, true);
+        return Stream.of(threads).map(Util::dumpThreadInfo).collect(Collectors.joining("\n"));
+    }
 
-        deadlocks=bean.findMonitorDeadlockedThreads();
-        if(deadlocks != null && deadlocks.length > 0) {
-            sb.append("monitor deadlocked threads:\n");
-            _printThreads(bean,deadlocks,sb);
+
+    private static String dumpThreadInfo(ThreadInfo thread) { // copied from Infinispan
+        StringBuilder sb=new StringBuilder(String.format("\"%s\" #%s prio=0 tid=0x%x nid=NA %s%n", thread.getThreadName(), thread.getThreadId(),
+                                                         thread.getThreadId(), thread.getThreadState().toString().toLowerCase()));
+        sb.append(String.format("   java.lang.Thread.State: %s%n", thread.getThreadState()));
+        LockInfo blockedLock = thread.getLockInfo();
+        StackTraceElement[] s = thread.getStackTrace();
+        MonitorInfo[] monitors = thread.getLockedMonitors();
+        for (int i = 0; i < s.length; i++) {
+            StackTraceElement ste = s[i];
+            sb.append(String.format("\tat %s\n", ste));
+            if (i == 0 && blockedLock != null) {
+                boolean parking = ste.isNativeMethod() && ste.getMethodName().equals("park");
+                sb.append(String.format("\t- %s <0x%x> (a %s)%n", blockedState(thread, blockedLock, parking),
+                                        blockedLock.getIdentityHashCode(), blockedLock.getClassName()));
+            }
+            if (monitors != null) {
+                for (MonitorInfo monitor : monitors) {
+                    if (monitor.getLockedStackDepth() == i) {
+                        sb.append(String.format("\t- locked <0x%x> (a %s)%n", monitor.getIdentityHashCode(), monitor.getClassName()));
+                    }
+                }
+            }
+        }
+        sb.append('\n');
+
+        LockInfo[] synchronizers = thread.getLockedSynchronizers();
+        if (synchronizers != null && synchronizers.length > 0) {
+            sb.append("\n   Locked ownable synchronizers:\n");
+            for (LockInfo synchronizer : synchronizers) {
+                sb.append(String.format("\t- <0x%x> (a %s)%n", synchronizer.getIdentityHashCode(), synchronizer.getClassName()));
+            }
+            sb.append('\n');
         }
         return sb.toString();
     }
 
 
-    protected static void _printThreads(ThreadMXBean bean,long[] ids,StringBuilder sb) {
-        ThreadInfo[] threads=bean.getThreadInfo(ids,20);
-        for(ThreadInfo info : threads) {
-            if(info == null)
-                continue;
-            sb.append(info.getThreadName()).append(":\n");
-            StackTraceElement[] stack_trace=info.getStackTrace();
-            for(StackTraceElement el : stack_trace) {
-                sb.append("    at ").append(el.getClassName()).append(".").append(el.getMethodName());
-                sb.append("(").append(el.getFileName()).append(":").append(el.getLineNumber()).append(")");
-                sb.append("\n");
+    private static String blockedState(ThreadInfo thread, LockInfo blockedLock, boolean parking) {
+        String state;
+        if (blockedLock != null) {
+            if (thread.getThreadState() == Thread.State.BLOCKED) {
+                state = "waiting to lock";
+            } else if (parking) {
+                state = "parking to wait for";
+            } else {
+                state = "waiting on";
             }
-            sb.append("\n\n");
+        } else {
+            state = null;
         }
+        return state;
     }
+
 
 
     public static boolean interruptAndWaitToDie(Thread t) {
@@ -3165,6 +3206,30 @@ public class Util {
         }
     }
 
+    static ClassLoader[] getClassLoaders(ClassLoader appClassLoader) {
+        return new ClassLoader[]{
+              appClassLoader,   // User defined classes
+              Util.class.getClassLoader(),           // JGroups classes (not always on TCCL [modular env])
+              ClassLoader.getSystemClassLoader(),    // Used when load time instrumentation is in effect
+              Thread.currentThread().getContextClassLoader() //Used by jboss-as stuff
+        };
+    }
+
+    public static InputStream getResourceAsStream(String resourcePath, ClassLoader userClassLoader) {
+        if (resourcePath.startsWith("/")) {
+            resourcePath = resourcePath.substring(1);
+        }
+        InputStream is = null;
+        for (ClassLoader cl : getClassLoaders(userClassLoader)) {
+            if (cl != null) {
+                is = cl.getResourceAsStream(resourcePath);
+                if (is != null) {
+                    break;
+                }
+            }
+        }
+        return is;
+    }
 
     public static InputStream getResourceAsStream(String name,Class clazz) {
         ClassLoader loader;
@@ -3207,6 +3272,26 @@ public class Util {
         return retval;
     }
 
+    public static String getChild(final Element root, String path) {
+        String[] paths=path.split("\\.");
+        Element current=root;
+        boolean found=false;
+        for(String el: paths) {
+            NodeList subnodes=current.getChildNodes();
+            found=false;
+            for(int j=0; j < subnodes.getLength(); j++) {
+                Node subnode=subnodes.item(j);
+                if(subnode.getNodeType() != Node.ELEMENT_NODE)
+                    continue;
+                if(subnode.getNodeName().equals(el)) {
+                    current=(Element)subnode;
+                    found=true;
+                    break;
+                }
+            }
+        }
+        return found? current.getFirstChild().getNodeValue() : null;
+    }
 
     /** Checks whether 2 Addresses are on the same host */
     public static boolean sameHost(Address one,Address two) {
@@ -3324,6 +3409,40 @@ public class Util {
         return new LinkedList<>(retval);
     }
 
+    /**
+     * Parses a string into a list of IpAddresses
+     * @param list The list to which to add parsed elements
+     * @param hosts The string with host:port pairs
+     * @param unresolved_hosts A list of unresolved hosts
+     * @param port_range The port range to consider
+     * @return True if all hostnames resolved fine, false otherwise
+     */
+    public static boolean parseCommaDelimitedHostsInto(final Collection<PhysicalAddress> list,
+                                                       final Collection<String> unresolved_hosts,
+                                                       String hosts,int port_range) {
+        StringTokenizer tok=hosts != null? new StringTokenizer(hosts,",") : null;
+        boolean all_resolved=true;
+        while(tok != null && tok.hasMoreTokens()) {
+            String t=tok.nextToken().trim();
+            String host=t.substring(0,t.indexOf('['));
+            host=host.trim();
+            int port=Integer.parseInt(t.substring(t.indexOf('[') + 1,t.indexOf(']')));
+            try {
+                InetAddress[] resolvedAddresses=InetAddress.getAllByName(host);
+                for(int i=0; i < resolvedAddresses.length; i++) {
+                    for(int p=port; p <= port + port_range; p++) {
+                        IpAddress addr=new IpAddress(resolvedAddresses[i], p);
+                        list.add(addr);
+                    }
+                }
+            }
+            catch(UnknownHostException ex) {
+                all_resolved=false;
+                unresolved_hosts.add(host);
+            }
+        }
+        return all_resolved;
+    }
 
     /**
      * Input is "daddy[8880],sindhu[8880],camille[5555]. Return List of
@@ -3590,13 +3709,9 @@ public class Util {
     }
 
     public static ServerSocket createServerSocket(SocketFactory factory, String service_name, InetAddress bind_addr, int start_port) {
-        ServerSocket ret=null;
         try {
-            ret=factory.createServerSocket(service_name);
-            Util.bind(ret, bind_addr, start_port, start_port+1000, 50);
-            return ret;
-        }
-        catch(Exception e) {
+            return createServerSocket(factory, service_name, bind_addr, start_port, start_port+1000);
+        } catch (Exception e) {
             return null;
         }
     }
@@ -3609,11 +3724,9 @@ public class Util {
 
         while(true) {
             try {
-                if(srv_sock != null);
+                if(srv_sock != null)
                     Util.close(srv_sock);
-                srv_sock=factory.createServerSocket(service_name);
-                InetSocketAddress sock_addr=new InetSocketAddress(bind_addr, start_port);
-                srv_sock.bind(sock_addr);
+                srv_sock=factory.createServerSocket(service_name, start_port, 0, bind_addr);
                 return srv_sock;
             }
             catch(SocketException bind_ex) {
@@ -4642,8 +4755,10 @@ public class Util {
         // Pattern p=Pattern.compile("[A-Z]+");
         Matcher m=METHOD_NAME_TO_ATTR_NAME_PATTERN.matcher(name);
         StringBuffer sb=new StringBuffer(); // todo: switch to StringBuilder when the JDK version is >= 9
+        int start=0, end=0;
         while(m.find()) {
-            int start=m.start(), end=m.end();
+            start=m.start();
+            end=m.end();
             String str=name.substring(start,end).toLowerCase();
             if(str.length() > 1) {
                 String tmp1=str.substring(0,str.length() - 1);
@@ -4656,7 +4771,9 @@ public class Util {
             else
                 m.appendReplacement(sb,"_" + str);
         }
-        m.appendTail(sb);
+        // m.appendTail(sb); // https://issues.redhat.com/browse/JGRP-2670
+        sb.append(name, end, name.length());
+
         return sb.length() > 0? sb.toString() : methodName;
     }
 
@@ -4683,10 +4800,13 @@ public class Util {
             // Pattern p=Pattern.compile("_.");
             Matcher m=ATTR_NAME_TO_METHOD_NAME_PATTERN.matcher(attr_name);
             StringBuffer sb=new StringBuffer(); // todo: switch to StringBuilder when the JDK version is >= 9
+            int end=0;
             while(m.find()) {
+                end=m.end();
                 m.appendReplacement(sb,attr_name.substring(m.end() - 1,m.end()).toUpperCase());
             }
-            m.appendTail(sb);
+            // m.appendTail(sb); // https://issues.redhat.com/browse/JGRP-2670
+            sb.append(attr_name, end, attr_name.length());
             char first=sb.charAt(0);
             if(Character.isLowerCase(first)) {
                 sb.setCharAt(0,Character.toUpperCase(first));
