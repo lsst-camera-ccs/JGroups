@@ -221,6 +221,10 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
     protected Future<?>                 xmit_task;
     /** Used by the retransmit task to keep the last retransmitted seqno per sender (https://issues.jboss.org/browse/JGRP-1539) */
     protected final Map<Address,Long>   xmit_task_map=new ConcurrentHashMap<>();
+    
+    // CCS begin
+    private final Map<String,Long> xmit_prev = new ConcurrentHashMap<>(); // SeqnoList.toString() -> millis time stamp
+    // CCS end
 
     protected volatile boolean          leaving=false;
     protected volatile boolean          running=false;
@@ -907,7 +911,21 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
         // CCS begin
         if (ccs_retransmit) {
             if (original_sender.equals(local_addr)) {
-                log.info("NAKACK2: retransmit request from "+ CCSUtil.toString(xmit_requester) +" for "+ missing_msgs);
+                if (ccs_retransmit_act && use_mcast_xmit) {
+                    String key = missing_msgs.toString();
+                    Long prev = xmit_prev.get(key);
+                    long now = System.currentTimeMillis();
+                    if (prev == null || (now-prev)>(xmit_interval/2)) {
+                        xmit_prev.put(key, now);
+                        log.info("NAKACK2: retransmit request from "+ CCSUtil.toString(xmit_requester) +" for "+ missing_msgs);
+                    } else {
+                        log.info("NAKACK2: suppressed retransmit request from "+ CCSUtil.toString(xmit_requester) +" for "+ missing_msgs);
+                        return;
+                    }
+                    
+                } else {
+                    log.info("NAKACK2: retransmit request from "+ CCSUtil.toString(xmit_requester) +" for "+ missing_msgs);
+                }
             } else {
                 log.warn("NAKACK2: handling retransmit request from "+ CCSUtil.toString(xmit_requester) +" for "+ CCSUtil.toString(original_sender));
             }
@@ -1501,6 +1519,16 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
         }
         if(resend_last_seqno && last_seqno_resender != null)
             last_seqno_resender.execute(seqno.get());
+        
+        // CCS begin
+        long deadline = System.currentTimeMillis() - xmit_interval/2;
+        Iterator<Map.Entry<String,Long>> it = xmit_prev.entrySet().iterator();
+        while (it.hasNext()) {
+            if (it.next().getValue() < deadline) {
+                it.remove();
+            }
+        }
+        // CCS end
     }
 
 
