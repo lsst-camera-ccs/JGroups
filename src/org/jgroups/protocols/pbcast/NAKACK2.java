@@ -913,16 +913,15 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
             if (original_sender.equals(local_addr)) {
                 if (ccs_retransmit_act && use_mcast_xmit) {
                     String key = missing_msgs.toString();
-                    Long prev = xmit_prev.get(key);
                     long now = System.currentTimeMillis();
+                    Long prev = xmit_prev.putIfAbsent(key, now);
                     if (prev == null || (now-prev)>(xmit_interval/2)) {
-                        xmit_prev.put(key, now);
+                        if (prev != null) xmit_prev.put(key, now);
                         log.info("NAKACK2: retransmit request from "+ CCSUtil.toString(xmit_requester) +" for "+ missing_msgs);
                     } else {
                         log.info("NAKACK2: suppressed retransmit request from "+ CCSUtil.toString(xmit_requester) +" for "+ missing_msgs);
                         return;
                     }
-                    
                 } else {
                     log.info("NAKACK2: retransmit request from "+ CCSUtil.toString(xmit_requester) +" for "+ missing_msgs);
                 }
@@ -1521,11 +1520,13 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
             last_seqno_resender.execute(seqno.get());
         
         // CCS begin
-        long deadline = System.currentTimeMillis() - xmit_interval/2;
-        Iterator<Map.Entry<String,Long>> it = xmit_prev.entrySet().iterator();
-        while (it.hasNext()) {
-            if (it.next().getValue() < deadline) {
-                it.remove();
+        if (ccs_retransmit_act) {
+            long deadline = System.currentTimeMillis() - xmit_interval / 2;
+            Iterator<Map.Entry<String, Long>> it = xmit_prev.entrySet().iterator();
+            while (it.hasNext()) {
+                if (it.next().getValue() < deadline) {
+                    it.remove();
+                }
             }
         }
         // CCS end
