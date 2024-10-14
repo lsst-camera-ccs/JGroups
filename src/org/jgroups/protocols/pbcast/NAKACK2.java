@@ -911,12 +911,11 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
         // CCS begin
         if (ccs_retransmit) {
             if (original_sender.equals(local_addr)) {
-                if (ccs_retransmit_act && use_mcast_xmit) {
+                if (ccs_retransmit_act && use_mcast_xmit) { // suppress if request for the same set of messages was processed less that xmit_interval/2 ago
                     String key = missing_msgs.toString();
                     long now = System.currentTimeMillis();
-                    Long prev = xmit_prev.putIfAbsent(key, now);
-                    if (prev == null || (now-prev)>(xmit_interval/2)) {
-                        if (prev != null) xmit_prev.put(key, now);
+                    long t = xmit_prev.merge(key, now, (old, cur) -> (cur-old)>(xmit_interval/2) ? cur : old);
+                    if (t == now) {
                         log.info("NAKACK2: retransmit request from "+ CCSUtil.toString(xmit_requester) +" for "+ missing_msgs);
                     } else {
                         log.info("NAKACK2: suppressed retransmit request from "+ CCSUtil.toString(xmit_requester) +" for "+ missing_msgs);
