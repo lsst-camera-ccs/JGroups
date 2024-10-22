@@ -914,7 +914,7 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
                 if (ccs_retransmit_act && use_mcast_xmit) { // suppress if request for the same set of messages was processed less that xmit_interval/2 ago
                     String key = missing_msgs.toString();
                     long now = System.currentTimeMillis();
-                    long t = xmit_prev.merge(key, now, (old, cur) -> (cur-old)>(xmit_interval/2) ? cur : old);
+                    long t = xmit_prev.merge(key, now, (old, cur) -> (cur-old)>(xmit_interval/2) ? cur : old-1);
                     if (t == now) {
                         log.info("NAKACK2: retransmit request from "+ CCSUtil.toString(xmit_requester) +" for "+ missing_msgs);
                     } else {

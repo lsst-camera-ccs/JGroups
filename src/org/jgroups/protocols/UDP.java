@@ -16,9 +16,11 @@ import java.io.IOException;
 import java.lang.reflect.Method;
 import java.net.*;
 import java.util.Formatter;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.jgroups.ccs.CCSUtil;
+import org.jgroups.ccs.MessageGate;
 
 
 /**
@@ -136,6 +138,10 @@ public class UDP extends TP {
     protected SuppressLog<InetAddress> suppress_log_out_of_buffer_space;
 
     protected static final boolean is_android, is_mac;
+    
+    // CCS begin
+    private MessageGate messageGate;
+    // CCS end
 
 
     static  {
@@ -231,10 +237,20 @@ public class UDP extends TP {
     }
 
     public void sendMulticast(byte[] data, int offset, int length) throws Exception {
-        if(ip_mcast && mcast_addr != null)
+        if(ip_mcast && mcast_addr != null) {
+        
+            // CCS begin
+            if (messageGate != null) {
+                if (!messageGate.process(length)) {
+                    return;
+                }
+            }
+            // CCS end
+        
             _send(mcast_addr.getIpAddress(), mcast_addr.getPort(), data, offset, length);
-        else
+        } else {
             sendToMembers(members, data, offset, length);
+        }
     }
 
     public void sendUnicast(PhysicalAddress dest, byte[] data, int offset, int length) throws Exception {
@@ -280,6 +296,34 @@ public class UDP extends TP {
 
     public void init() throws Exception {
         super.init();
+
+        // CCS begin
+        String s = System.getProperty("ccs.jg.gate");
+        if (s != null) {
+            messageGate = new MessageGate(log);
+            Map<String,String> m = new HashMap<>();
+            for (String token : s.split(";")) {
+                String[] ss = token.split("=");
+                if (ss.length == 2) {
+                    m.put(ss[0], ss[1]);
+                }
+            }
+            try {
+                double loss = Double.parseDouble(m.get("loss"));
+                messageGate.setMessageLoss(loss);
+                log.info("Simulate losing "+ loss +" of messages.");
+            } catch (NullPointerException | NumberFormatException x) {
+            }
+            try {
+                int maxSize = Integer.parseInt(m.get("max_size"));
+                int maxRate = Integer.parseInt(m.get("max_rate"));
+                messageGate.setRateLimit(maxSize, maxRate);
+                log.info("Throttle message publication at "+ maxSize +" MB, "+ maxRate +" MB/sec.");
+            } catch (NullPointerException | NumberFormatException x) {
+            }
+        }
+        // CCS end
+
         if(max_bundle_size > Global.MAX_DATAGRAM_PACKET_SIZE)
             throw new IllegalArgumentException("max_bundle_size (" + max_bundle_size + ") cannot exceed the max datagram " +
                                                  "packet size of " + Global.MAX_DATAGRAM_PACKET_SIZE);
