@@ -11,7 +11,6 @@ import org.jgroups.conf.ClassConfigurator;
 import org.jgroups.conf.PropertyConverters;
 import org.jgroups.conf.XmlNode;
 import org.jgroups.logging.Log;
-import org.jgroups.logging.LogFactory;
 import org.jgroups.protocols.TP;
 import org.jgroups.util.*;
 
@@ -24,6 +23,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import org.jgroups.ccs.CCSLog;
 
 
 /**
@@ -65,7 +65,10 @@ public abstract class Protocol implements Lifecycle {
     @ManagedAttribute(description="The local address of this member")
     protected Address              local_addr;
 
-    protected final Log            log=LogFactory.getLog(this.getClass());
+    // CCS begin
+//    protected final Log            log=LogFactory.getLog(this.getClass());
+    protected final Log            log = new CCSLog(this);
+    // CCS end
 
     protected List<Policy>         policies;
 
