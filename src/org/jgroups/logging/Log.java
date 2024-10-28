@@ -1,5 +1,7 @@
 package org.jgroups.logging;
 
+import java.util.logging.Level;
+
 /**
  * Simple logging wrapper for log4j or JDK logging. Code originally copied from Infinispan
  *
@@ -40,6 +42,60 @@ public interface Log {
     void trace(String msg);
     void trace(String format, Object ... args);
     void trace(String msg, Throwable throwable);
+    
+    // CCS begin
+    default boolean isEnabled(Level level) {
+        return switch (level.getName()) {
+            case "OFF" -> isFatalEnabled();
+            case "SEVERE" -> isErrorEnabled();
+            case "WARNING" -> isWarnEnabled();
+            case "INFO" -> isInfoEnabled();
+            case "CONFIG", "FINE" -> isDebugEnabled();
+            case "FINER", "FINEST" -> isTraceEnabled();
+            case "ALL" -> false;
+            default -> throw new IllegalArgumentException("Unknown level "+ level);
+        };
+    }
+    
+    default void out(Level level, String msg) {
+        switch (level.getName()) {
+            case "OFF" -> fatal(msg);
+            case "SEVERE" -> error(msg);
+            case "WARNING" -> warn(msg);
+            case "INFO" -> info(msg);
+            case "CONFIG", "FINE" -> debug(msg);
+            case "FINER", "FINEST" -> trace(msg);
+            case "ALL" -> {}
+            default -> throw new IllegalArgumentException("Unknown level "+ level);
+        }
+    }
+    
+    default void out(Level level, String format, Object ... args) {
+        switch (level.getName()) {
+            case "OFF" -> fatal(format, args);
+            case "SEVERE" -> error(format, args);
+            case "WARNING" -> warn(format, args);
+            case "INFO" -> info(format, args);
+            case "CONFIG", "FINE" -> debug(format, args);
+            case "FINER", "FINEST" -> trace(format, args);
+            case "ALL" -> {}
+            default -> throw new IllegalArgumentException("Unknown level "+ level);
+        }
+    }
+    
+    default void out(Level level, String msg, Throwable throwable) {
+        switch (level.getName()) {
+            case "OFF" -> fatal(msg, throwable);
+            case "SEVERE" -> error(msg, throwable);
+            case "WARNING" -> warn(msg, throwable);
+            case "INFO" -> info(msg +". "+ throwable);
+            case "CONFIG", "FINE" -> debug(msg, throwable);
+            case "FINER", "FINEST" -> trace(msg, throwable);
+            case "ALL" -> {}
+            default -> throw new IllegalArgumentException("Unknown level "+ level);
+        }
+    }
+    // CCS end
 
 
 

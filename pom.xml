@@ -215,8 +215,8 @@
                     <excludes>
                         <exclude>org/jgroups/util/JUnitXMLReporter.java</exclude>
                     </excludes>
-                    <source>11</source>
-                    <target>11</target>
+                    <source>17</source>
+                    <target>17</target>
                 </configuration>
             </plugin>
             <plugin>
@@ -240,7 +240,7 @@
                         </bannedRepositories>-->
                         <requireJavaVersion>
                             <!-- require Java 11 or higher -->
-                            <version>[11,)</version>
+                            <version>[17,)</version>
                         </requireJavaVersion>
                         <requireMavenVersion>
                             <version>3.0.4</version>
