@@ -24,6 +24,7 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.jgroups.ccs.CCSLog;
+import org.jgroups.ccs.CCSProperty;
 
 
 /**
@@ -68,6 +69,8 @@ public abstract class Protocol implements Lifecycle {
     // CCS begin
 //    protected final Log            log=LogFactory.getLog(this.getClass());
     protected final Log            log = new CCSLog(this);
+    
+    static public final CCSProperty ccs_prop_retransmit = new CCSProperty("ccs.jg.retransmit");
     // CCS end
 
     protected List<Policy>         policies;
