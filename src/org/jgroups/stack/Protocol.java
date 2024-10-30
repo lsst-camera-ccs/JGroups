@@ -71,6 +71,8 @@ public abstract class Protocol implements Lifecycle {
     protected final Log            log = new CCSLog(this);
     
     static public final CCSProperty ccs_prop_retransmit = new CCSProperty("ccs.jg.retransmit");
+    static public final CCSProperty ccs_prop_throttle = new CCSProperty("ccs.jg.throttle");
+    static public final CCSProperty ccs_prop_debug_loss = new CCSProperty("ccs.jg.debug.loss");
     // CCS end
 
     protected List<Policy>         policies;

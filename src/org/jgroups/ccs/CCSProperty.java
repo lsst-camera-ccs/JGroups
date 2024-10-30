@@ -11,12 +11,25 @@ public class CCSProperty {
     private final String value;
     
     public CCSProperty(String name) {
-        String s = System.getProperty("ccs.jg.gate");
+        String s = System.getProperty(name);
         value = (s == null || s.isBlank()) ? null : s.trim();
     }
     
     public CCSProperty(String name, String value) {
         this.value = value.trim();
+    }
+    
+    static public Level getMaxLevel(CCSProperty... properties) {
+        Level out = null;
+        for (CCSProperty p : properties) {
+            Level level = p.getLevel();
+            if (level != null) {
+                if (out == null || out.intValue() < level.intValue()) {
+                    out = level;
+                }
+            }
+        }
+        return out;
     }
     
     public boolean isSet() {
@@ -46,6 +59,19 @@ public class CCSProperty {
         }
     }
     
+    public double getDouble() {
+        if (value == null) return Double.NaN;
+        for (String s : value.split("&")) {
+            if (!(s.isBlank() || s.contains("="))) {
+                try {
+                    return Double.parseDouble(s.trim());
+                } catch (NumberFormatException x) {
+                }
+            }
+        }
+        return Double.NaN;
+    }
+    
     public int getInt(String key) {
         String s = get(key);
         if (s == null) return Integer.MIN_VALUE;
@@ -54,6 +80,19 @@ public class CCSProperty {
         } catch (NumberFormatException x) {
             return Integer.MIN_VALUE;
         }
+    }
+    
+    public int getInt() {
+        if (value == null) return Integer.MIN_VALUE;
+        for (String s : value.split("&")) {
+            if (!(s.isBlank() || s.contains("="))) {
+                try {
+                    return Integer.parseInt(s.trim());
+                } catch (NumberFormatException x) {
+                }
+            }
+        }
+        return Integer.MIN_VALUE;
     }
     
     public boolean getBoolean(String key) {
@@ -96,7 +135,17 @@ public class CCSProperty {
     
     static public void main(String... s) {
         CCSProperty p = new CCSProperty("", "441");
-        System.out.println(p.getBoolean("INFO"));
-        System.out.println(p.getLevel());
+        System.out.println(p.getBoolean("FINE")); // false
+        System.out.println(p.getLevel()); // INFO
+        System.out.println(p.getDouble()); // 441.
+        System.out.println(p.getDouble("x")); // NaN
+        System.out.println(p.getInt()); // 441
+        p = new CCSProperty("", "x=4&FINE & 441");
+        System.out.println(p.getBoolean("FINE")); // true
+        System.out.println(p.getLevel()); // FINE
+        System.out.println(p.getDouble()); // 441.
+        System.out.println(p.getDouble("x")); // 4
+        System.out.println(p.getInt()); // 441
+        
     }
 }

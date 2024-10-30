@@ -19,6 +19,8 @@ import java.net.*;
 import java.util.Formatter;
 import java.util.List;
 import java.util.Map;
+import org.jgroups.ccs.CCSProperty;
+import org.jgroups.ccs.MessageGate;
 
 
 /**
@@ -137,6 +139,9 @@ public class UDP extends TP {
 
     protected static final boolean is_android, is_mac;
 
+    // CCS begin
+    private MessageGate messageGate;
+    // CCS end
 
     static  {
         is_android=Util.checkForAndroid();
@@ -257,6 +262,13 @@ public class UDP extends TP {
 
     @Override
     public void sendToAll(byte[] data, int offset, int length) throws Exception {
+        // CCS begin
+        if (messageGate != null) {
+            if (!messageGate.process(length)) {
+                return;
+            }
+        }
+        // CCS end
         if(ip_mcast && mcast_addr != null) {
             if(local_transport != null) {
                 try {
@@ -324,6 +336,23 @@ public class UDP extends TP {
 
     public void init() throws Exception {
         super.init();
+
+        // CCS begin
+        double loss = ccs_prop_debug_loss.getDouble();
+        if ((!Double.isNaN(loss) && loss > 0. && loss < 1.) || ccs_prop_throttle.isSet()) {
+            messageGate = new MessageGate(log, CCSProperty.getMaxLevel(ccs_prop_debug_loss, ccs_prop_throttle));
+            messageGate.setMessageLoss(loss);
+            log.warn("Simulating losing "+ loss +" of multicast messages.");
+            int maxSize = ccs_prop_throttle.getInt("size");
+            int maxRate = ccs_prop_throttle.getInt("rate");
+            if (maxRate > 0) {
+                if (maxSize < 1) maxSize = maxRate;
+                messageGate.setRateLimit(maxSize, maxRate);
+                log.info("Throttle message publication at "+ maxSize +" MB, "+ maxRate +" MB/sec.");
+            }
+        }
+        // CCS end
+
         if(bundler.getMaxSize() > Global.MAX_DATAGRAM_PACKET_SIZE)
             throw new IllegalArgumentException("bundler.max_size (" + bundler.getMaxSize() + ") cannot exceed the max " +
                                                  "datagram packet size of " + Global.MAX_DATAGRAM_PACKET_SIZE);
