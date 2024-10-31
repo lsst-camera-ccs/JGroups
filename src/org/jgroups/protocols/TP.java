@@ -26,7 +26,9 @@ import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
+import org.jgroups.ccs.CCSUtil;
 
 import static org.jgroups.conf.AttributeType.SCALAR;
 
@@ -1436,6 +1438,37 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
                 responses.done();
             }
         }
+        // CCS begin
+        if (ccs_prop_physical.isSet()) {
+            if (logical_addr_cache != null && dest != null) {
+                int where = 0;
+                physical_dest = logical_addr_cache.get(dest);
+                if (physical_dest == null) {
+                    for (Map.Entry<Address,PhysicalAddress> e : logical_addr_cache.contents(false).entrySet()) {
+                        Address a = e.getKey();
+                        if (dest.equals(a)) {
+                            physical_dest = e.getValue();
+                            where = 1;
+                            break;
+                        } else if (dest.toString().equals(a.toString())) {
+                            log.warn("TP: stale cache, wanted "+ CCSUtil.toString(dest) +", found "+ CCSUtil.toString(a));
+                        }
+                    }
+                }
+                if (physical_dest == null) {
+                    LockSupport.parkNanos(10000);
+                    physical_dest = logical_addr_cache.get(dest);
+                    where = 2;
+                }
+                if (physical_dest == null) {
+                    log.warn("TP: failed sendTo "+ CCSUtil.toString(dest));
+                } else {
+                    log.warn("TP: recovered sendTo "+ where +", logical "+ CCSUtil.toString(dest) +", physical "+ CCSUtil.toString(physical_dest));
+                    sendUnicast(physical_dest, buf, offset, length);
+                }
+            }
+        }
+        // CCS end
     }
 
 
@@ -1574,6 +1607,11 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
     }
 
     protected boolean addPhysicalAddressToCache(Address logical_addr, PhysicalAddress physical_addr, boolean overwrite) {
+        // CCS begin
+        if (ccs_prop_physical.isSet() && !Objects.equals(local_addr, logical_addr)) {
+            log.out(ccs_prop_physical.getLevel(), "TP: adding physical address to cache: Logical: "+ CCSUtil.toString(logical_addr) +", Physical: "+ CCSUtil.toString(physical_addr));
+        }
+        // CCS end
         return logical_addr != null && physical_addr != null &&
           overwrite? logical_addr_cache.add(logical_addr, physical_addr) : logical_addr_cache.addIfAbsent(logical_addr, physical_addr);
     }

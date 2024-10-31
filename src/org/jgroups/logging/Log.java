@@ -45,6 +45,7 @@ public interface Log {
     
     // CCS begin
     default boolean isEnabled(Level level) {
+        if (level == null) return false;
         return switch (level.getName()) {
             case "OFF" -> isFatalEnabled();
             case "SEVERE" -> isErrorEnabled();
@@ -58,6 +59,7 @@ public interface Log {
     }
     
     default void out(Level level, String msg) {
+        if (level == null) return;
         switch (level.getName()) {
             case "OFF" -> fatal(msg);
             case "SEVERE" -> error(msg);
@@ -71,6 +73,7 @@ public interface Log {
     }
     
     default void out(Level level, String format, Object ... args) {
+        if (level == null) return;
         switch (level.getName()) {
             case "OFF" -> fatal(format, args);
             case "SEVERE" -> error(format, args);
@@ -84,6 +87,7 @@ public interface Log {
     }
     
     default void out(Level level, String msg, Throwable throwable) {
+        if (level == null) return;
         switch (level.getName()) {
             case "OFF" -> fatal(msg, throwable);
             case "SEVERE" -> error(msg, throwable);

@@ -19,7 +19,9 @@ import java.net.*;
 import java.util.Formatter;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Level;
 import org.jgroups.ccs.CCSProperty;
+import org.jgroups.ccs.CCSUtil;
 import org.jgroups.ccs.MessageGate;
 
 
@@ -515,14 +517,38 @@ public class UDP extends TP {
 
 
     protected IpAddress createLocalAddress() {
-        if(sock == null || sock.isClosed())
+        
+        // CCS begin
+        Level level = ccs_prop_physical.getLevel();
+        
+        if (sock == null || sock.isClosed()) {
+            log.out(level, "Trying to create physical address of null or closed socket %s", sock);
             return null;
-        if(external_addr != null) {
-            if(external_port > 0)
+        }
+        if (external_addr != null) {
+            if (external_port > 0) {
                 return new IpAddress(external_addr, external_port);
+            }
             return new IpAddress(external_addr, sock.getLocalPort());
         }
-        return new IpAddress(sock.getLocalAddress(), sock.getLocalPort());
+        IpAddress out = new IpAddress(sock.getLocalAddress(), sock.getLocalPort());
+        if (log.isEnabled(level)) {
+            log.out(level, "Created physical address: "+ CCSUtil.toString(out));
+        }
+        return out;
+
+
+//        if(sock == null || sock.isClosed())
+//            return null;
+//        if(external_addr != null) {
+//            if(external_port > 0)
+//                return new IpAddress(external_addr, external_port);
+//            return new IpAddress(external_addr, sock.getLocalPort());
+//        }
+//        return new IpAddress(sock.getLocalAddress(), sock.getLocalPort());
+
+        // CCS end
+
     }
 
     protected <T extends UDP> T setTimeToLive(int ttl, MulticastSocket s) {
