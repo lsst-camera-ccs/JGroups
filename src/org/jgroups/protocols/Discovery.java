@@ -19,7 +19,12 @@ import java.util.*;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.logging.Level;
 import java.util.stream.Collectors;
+import org.jgroups.ccs.CCSProperty;
+import org.jgroups.ccs.CCSUtil;
+import static org.jgroups.stack.Protocol.ccs_prop_connect;
+import static org.jgroups.stack.Protocol.ccs_prop_physical;
 
 
 /**
@@ -710,15 +715,44 @@ public abstract class Discovery extends Protocol {
             long sleep_time=rank == 0? Util.random(stagger_timeout)
               : stagger_timeout * rank / view_size - (stagger_timeout / view_size);
             timer.schedule(() -> {
+                // CCS begin
+                logDiscResp(list, sender, true);
+                // CCS end
                 log.trace("%s: received GET_MBRS_REQ from %s, sending staggered response %s", local_addr, sender, print(list));
                 down_prot.down(rsp_msg);
             }, sleep_time, TimeUnit.MILLISECONDS, sends_can_block);
             return;
         }
 
+        // CCS begin
+        logDiscResp(list, sender, true);
+        // CCS end
         log.trace("%s: received GET_MBRS_REQ from %s, sending response %s", local_addr, sender, print(list));
         down_prot.down(rsp_msg);
     }
+    
+    // CCS begin
+    private void logDiscResp(List<PingData> list, final Address sender, boolean staggered) {
+        Level level = CCSProperty.getMaxLevel(ccs_prop_physical, ccs_prop_connect);
+        if (log.isEnabled(level)) {
+            StringBuilder sb = new StringBuilder("Discovery.sendDiscoveryResponse to ");
+            sb.append(CCSUtil.toString(sender)).append(", staggered = ").append(staggered).append(". {");
+            if (list != null) {
+                list.forEach(d -> {
+                    if (d != null) {
+                        sb.append(d.getLogicalName()).append(" : ");
+                        sb.append(CCSUtil.toString(d.getAddress())).append(" , ").append(CCSUtil.toString(d.getPhysicalAddr()));
+                    }
+                });
+            } else {
+                sb.append("null");
+            }
+            sb.append("]");
+            log.out(level, sb.toString());
+        }
+        
+    }
+    // CCS end
 
     protected static String print(List<PingData> list) {
         if(list == null)
