@@ -12,7 +12,7 @@
     <artifactId>jgroups</artifactId>
     <packaging>jar</packaging>
     <name>JGroups</name>
-    <version>5.313.1-SNAPSHOT</version>
+    <version>5.313.2-SNAPSHOT</version>
     <description>Reliable cluster communication toolkit (LSST CCS fork)</description>
     <url>http://www.jgroups.org</url>
 
