@@ -72,8 +72,14 @@ public abstract class Protocol implements Lifecycle {
     
     static public final CCSProperty ccs_prop_physical = new CCSProperty("ccs.jg.physical");
     static public final CCSProperty ccs_prop_connect = new CCSProperty("ccs.jg.connect");
+    
+    //** Interfere with message retransmission. bool "suppress".
     static public final CCSProperty ccs_prop_retransmit = new CCSProperty("ccs.jg.retransmit");
+    
+    /** Throttle message publication at int "size" MB, int "rate" MB/sec. */
     static public final CCSProperty ccs_prop_throttle = new CCSProperty("ccs.jg.throttle");
+
+    //** Message loss simulation. Double value [0,1] - portion of lost udp messages. */
     static public final CCSProperty ccs_prop_debug_loss = new CCSProperty("ccs.jg.debug.loss");
     // CCS end
 

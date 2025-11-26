@@ -1001,7 +1001,7 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
                     log.out(ccs_retransmit_level, "NAKACK2: retransmit request from "+ CCSUtil.toString(xmit_requester) +" for "+ missing_msgs);
                 }
             } else {
-                log.warn("NAKACK2: handling retransmit request from "+ CCSUtil.toString(xmit_requester) +" for "+ CCSUtil.toString(original_sender));
+                log.warn("NAKACK2: why am I handling retransmit request from "+ CCSUtil.toString(xmit_requester) +" for "+ CCSUtil.toString(original_sender));
             }
         }
         // CCS end
