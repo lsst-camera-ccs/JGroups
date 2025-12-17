@@ -22,15 +22,18 @@ import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
+import org.jgroups.ccs.CCSLog;
 import org.jgroups.ccs.CCSUtil;
 
 import static org.jgroups.conf.AttributeType.SCALAR;
+import org.jgroups.protocols.pbcast.NakAckHeader2;
 
 
 /**
@@ -375,6 +378,30 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
     //https://issues.redhat.com/browse/JGRP-849
     protected final ReentrantLock connectLock = new ReentrantLock();
     
+    // CCS begin
+    private final ConcurrentHashMap<Address, Set<Long>> expectedRetransmissions = new ConcurrentHashMap<>();
+    private long addExpectedRetransmission(Message msg) {
+        try {
+            NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
+            if (hdr.getType() == NakAckHeader2.XMIT_REQ) {
+                long seqno = hdr.getSeqno();
+                Address dest = msg.getDest();
+                Set<Long> seqnos = expectedRetransmissions.computeIfAbsent(dest, a -> Collections.synchronizedSet(new TreeSet<>()));
+                return seqnos.add(seqno) ? seqno : -1;
+            }
+        } catch (RuntimeException x) {
+        }
+        return -1;
+    }
+    private void removeExpectedRetransmissions(Address source, List<String> seqnos) {
+        Set<Long> expected = expectedRetransmissions.get(source);
+        if (expected != null) {
+            synchronized (expected) {
+                seqnos.forEach(s -> expected.remove(Long.valueOf(s)));
+            }
+        }
+    }
+    // CCS end
 
     // ================================== Thread pool ======================
 
@@ -1168,6 +1195,14 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
     }
 
     protected void _send(Message msg, Address dest) {
+        // CCS begin : remember our retransmission requests
+        if (dest != null && ccs_prop_retransmit.isLogEnabled(log)) {
+            long seqno = addExpectedRetransmission(msg);
+            if (seqno != -1) {
+                log.out(ccs_prop_retransmit.getLevel(), "TP: retransmit request {" + seqno + "} to " + CCSLog.toString(dest));
+            }
+        }
+        // CCS end
         try {
             Bundler tmp_bundler=bundler;
             if(tmp_bundler != null) {
@@ -1330,9 +1365,32 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
 
 
     protected void handleMessageBatch(DataInput in, boolean multicast, MessageFactory factory) {
+        // CCS begin
+        boolean ccs = ccs_prop_retransmit.isLogEnabled(log);
+        long time = ccs ? System.currentTimeMillis() : 0;
+        // CCS end
         try {
             final MessageBatch[] batches=Util.readMessageBatch(in, multicast, factory);
             final MessageBatch regular=batches[0], oob=batches[1];
+            // CCS begin
+            if (ccs) {
+                List<String> seqnos = new ArrayList<>();
+                Address sender = regular.getSender();
+                for (Iterator<Message> it = regular.iterator(); it.hasNext();) {
+                    Message msg = it.next();
+                    NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
+                    if (hdr != null && hdr.getType() == NakAckHeader2.XMIT_RSP) {
+                        seqnos.add(Long.toString(hdr.getSeqno()));
+                    }
+                }
+                if (!seqnos.isEmpty()) {
+                    removeExpectedRetransmissions(sender, seqnos);
+                    log.out(ccs_prop_retransmit.getLevel(), "TP: retransmission received from "+ sender +" {" + String.join(",", seqnos) + "} in "+ (System.currentTimeMillis()-time) +" ms.");
+                } else if (expectedRetransmissions.containsKey(sender)) {
+                    log.out(ccs_prop_retransmit.getLevel(), "TP: received new messages {"+ String.join(",", seqnos) +"} from "+ sender);
+                }
+            }
+            // CCS end
 
             // we need to update the stats *before* processing the batches: protocols can remove msgs from the batch
             if(oob != null) msg_stats.received(oob);
@@ -1451,7 +1509,7 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
                             where = 1;
                             break;
                         } else if (dest.toString().equals(a.toString())) {
-                            log.warn("TP: stale cache, wanted "+ CCSUtil.toString(dest) +", found "+ CCSUtil.toString(a));
+                            log.warn("TP: stale cache, wanted "+ CCSLog.toString(dest) +", found "+ CCSLog.toString(a));
                         }
                     }
                 }
@@ -1461,9 +1519,9 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
                     where = 2;
                 }
                 if (physical_dest == null) {
-                    log.warn("TP: failed sendTo "+ CCSUtil.toString(dest));
+                    log.warn("TP: failed sendTo "+ CCSLog.toString(dest));
                 } else {
-                    log.warn("TP: recovered sendTo "+ where +", logical "+ CCSUtil.toString(dest) +", physical "+ CCSUtil.toString(physical_dest));
+                    log.warn("TP: recovered sendTo "+ where +", logical "+ CCSLog.toString(dest) +", physical "+ CCSLog.toString(physical_dest));
                     sendUnicast(physical_dest, buf, offset, length);
                 }
             }
@@ -1609,7 +1667,7 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
     protected boolean addPhysicalAddressToCache(Address logical_addr, PhysicalAddress physical_addr, boolean overwrite) {
         // CCS begin
         if (ccs_prop_physical.isSet() && !Objects.equals(local_addr, logical_addr)) {
-            log.out(ccs_prop_physical.getLevel(), "TP: adding physical address to cache: Logical: "+ CCSUtil.toString(logical_addr) +", Physical: "+ CCSUtil.toString(physical_addr));
+            log.out(ccs_prop_physical.getLevel(), "TP: adding physical address to cache: Logical: "+ CCSLog.toString(logical_addr) +", Physical: "+ CCSLog.toString(physical_addr));
         }
         // CCS end
         return logical_addr != null && physical_addr != null &&

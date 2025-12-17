@@ -1,9 +1,14 @@
 package org.jgroups.ccs;
 
+import java.util.ArrayList;
+import org.jgroups.Address;
+import org.jgroups.JChannel;
+import org.jgroups.PhysicalAddress;
 import org.jgroups.logging.Log;
 import org.jgroups.logging.LogFactory;
 import org.jgroups.stack.Protocol;
 import org.jgroups.util.NameCache;
+import org.jgroups.util.UUID;
 
 /**
  * Logger that adds CCS-specific functionality to JGroups logger.
@@ -12,13 +17,29 @@ import org.jgroups.util.NameCache;
  */
 public class CCSLog implements Log {
 
+    // CCS begin
     private final Log log;
     private final Protocol protocol;
+    private final JChannel channel;
     private volatile String bus;
 
+    public CCSLog(Class<?> clazz, String bus) {
+        log = LogFactory.getLog(clazz);
+        protocol = null;
+        channel = null;
+        this.bus = bus;
+    }
+
     public CCSLog(Protocol protocol) {
-        this.protocol = protocol;
         log = LogFactory.getLog(protocol.getClass());
+        this.protocol = protocol;
+        channel = null;
+    }
+
+    public CCSLog(JChannel channel) {
+        log = LogFactory.getLog(channel.getClass());
+        protocol = null;
+        this.channel = channel;
     }
 
     @Override
@@ -181,11 +202,10 @@ public class CCSLog implements Log {
         return log.getLevel();
     }
     
-    private String getBusName() {
+    public String getBusName() {
         if (bus == null) {
             try {
-                String s = protocol.getProtocolStack().getChannel().clusterName();
-                if (s != null) bus = s;
+                bus = protocol.getProtocolStack().getChannel().clusterName();
             } catch (RuntimeException x) {
             }
             if (bus == null) {
@@ -193,6 +213,9 @@ public class CCSLog implements Log {
                 try {
                     channelName = protocol.getProtocolStack().getChannel().getName();
                 } catch (RuntimeException x) {
+                }
+                if (channelName == null && channel != null) {
+                    channelName = channel.getName();
                 }
                 if (channelName == null) {
                     try {
@@ -217,6 +240,61 @@ public class CCSLog implements Log {
             if (bus == null) return "CCS";
         }
         return bus;
+    }
+    
+    
+// -- Static utilities : -------------------------------------------------------
+    
+    /**
+     * Get brief string representation of current stack trace.
+     * 
+     * @param depth Max number of elements. If negative, all withing current class. If 0, all.
+     * @return Stack trace string.
+     */
+    static public String getStackTrace(int depth) {
+        StringBuilder sb = new StringBuilder("Stack: ");
+        StackTraceElement[] trace = Thread.currentThread().getStackTrace();
+        int n = trace.length - 2;
+        if (n < 1) return "";
+        ArrayList<String> mm = new ArrayList<>(n);        
+        if (depth >= 0) {
+            depth = (depth == 0 || depth > n) ? trace.length : depth + 2;
+            for (int i = 2; i < depth; i++) {
+                String clazz = trace[i].getClassName();
+                int k = clazz.lastIndexOf(".");
+                if (k >= 0) clazz = clazz.substring(k + 1);
+                mm.add(clazz + "." + trace[i].getMethodName());
+            }
+        } else {
+            String clazz = trace[2].getClassName();
+            int k = clazz.indexOf("$");
+            if (k >= 0) clazz = clazz.substring(0,k);
+            k = clazz.lastIndexOf(".");
+            if (k >= 0) clazz = clazz.substring(k + 1);
+            for (int i = 2; i < trace.length; i++) {
+                if (trace[i].getClassName().contains(clazz)) {
+                    mm.add(clazz + "." + trace[i].getMethodName());
+                }
+            }
+        }
+        return sb.append(String.join("<-", mm)).append(". ").toString();
+    }
+
+    public static String toString(Address address) {
+        if (address == null) {
+            return "null";
+        }
+        StringBuilder sb = new StringBuilder(address.getClass().getSimpleName());
+        if (address instanceof PhysicalAddress) {
+            sb.append(" ip=").append(((PhysicalAddress) address).printIpAddress());
+        } else if (address instanceof UUID) {
+            String name = NameCache.get(address);
+            if (name != null) {
+                sb.append(" ").append(name);
+            }
+            sb.append(" uuid=").append(((UUID) address).toStringLong());
+        }
+        return sb.toString();
     }
 
 }

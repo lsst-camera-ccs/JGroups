@@ -10,8 +10,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import org.jgroups.ccs.CCSUtil;
 
 import static org.jgroups.conf.AttributeType.SCALAR;
+import org.jgroups.protocols.pbcast.NakAckHeader2;
+import org.jgroups.stack.Protocol;
 
 /**
  * This bundler adds all (unicast or multicast) messages to a queue until max size has been exceeded, but does send
@@ -104,8 +107,19 @@ public class TransferQueueBundler extends BaseBundler implements Runnable {
         if(!running)
             return;
         if(drop_when_full || msg.isFlagSet(Message.TransientFlag.DONT_BLOCK)) {
-            if(!queue.offer(msg))
+            // CCS begin
+//            if(!queue.offer(msg))
+//                num_drops_on_full_queue++;
+            if(!queue.offer(msg)) {
                 num_drops_on_full_queue++;
+                if (Protocol.ccs_prop_retransmit.isLogEnabled(log)) {
+                    NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
+                    if (hdr != null && hdr.getType() == NakAckHeader2.XMIT_RSP) {
+                        log.out(Protocol.ccs_prop_retransmit.getLevel(), "BUNDLER: dropped retransmission {" + hdr.getSeqno() + "} "+ msg);
+                    }
+                }
+            }
+            // CCS end
         }
         else
             queue.put(msg);

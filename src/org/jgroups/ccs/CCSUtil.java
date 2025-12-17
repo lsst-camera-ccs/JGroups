@@ -1,31 +1,16 @@
 package org.jgroups.ccs;
 
-import org.jgroups.Address;
+import org.jgroups.Header;
+import org.jgroups.Message;
 import org.jgroups.PhysicalAddress;
 import org.jgroups.stack.IpAddress;
-import org.jgroups.util.NameCache;
-import org.jgroups.util.UUID;
 
 /**
  * Miscellaneous CCS-specific static utility methods.
  *
  * @author onoprien
  */
-public class CCSUtil { // CCS begin
-    
-    static public String toString(Address address) {
-        if (address == null) return "null";
-        StringBuilder sb = new StringBuilder(address.getClass().getSimpleName());
-        if (address instanceof PhysicalAddress) {
-            sb.append(" ip=").append(((PhysicalAddress)address).printIpAddress());
-        } else if (address instanceof UUID) {
-            String name = NameCache.get(address);
-            if (name != null) sb.append(" ").append(name);
-            sb.append(" uuid=").append(((UUID)address).toStringLong());
-        }
-        return sb.toString();
-    }
-    
+public class CCSUtil {
     static public boolean isValid(PhysicalAddress address) {
         if (address instanceof IpAddress) {
             IpAddress a = (IpAddress) address;
@@ -33,6 +18,13 @@ public class CCSUtil { // CCS begin
         } else {
             return false;
         }
+    }
+    
+    static public <T extends Header> T getHeader(Message msg, Class<T> clazz) {
+        for (Header h : msg.getHeaders().values()) {
+            if (clazz.isInstance(h)) return (T) h;
+        }
+        return null;
     }
     
 } // CCS end

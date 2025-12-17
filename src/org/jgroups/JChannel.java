@@ -24,6 +24,8 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.function.Consumer;
+import org.jgroups.ccs.CCSLog;
+import org.jgroups.stack.Protocol;
 
 /**
  * A channel represents a group communication endpoint (like a socket). An application joins a cluster by connecting
@@ -63,7 +65,11 @@ public class JChannel implements Closeable {
     protected ProtocolStack                         prot_stack;
     protected UpHandler                             up_handler;   // when set, all events are passed to the UpHandler
     protected Set<ChannelListener>                  channel_listeners;
-    protected final Log                             log=LogFactory.getLog(getClass());
+    // CCS begin
+//    protected final Log                             log=LogFactory.getLog(getClass());
+    protected final Log log = new CCSLog(this);
+    private final int timeMax = Protocol.ccs_prop_timing.getInt();
+    // CCS end
     protected List<AddressGenerator>                address_generators;
     protected final Promise<StateTransferResult>    state_promise=new Promise<>();
     protected boolean                               state_transfer_supported; // true if state transfer prot is in the stack
@@ -449,10 +455,21 @@ public class JChannel implements Closeable {
      * @exception IllegalStateException thrown if the channel is disconnected or closed
      */
     public JChannel send(Message msg) throws Exception {
+        // CCS begin
+        long time = timeMax > 0 ? System.currentTimeMillis() : 0L;
+        // CCS end
         if(msg == null)
             throw new NullPointerException("msg is null");
         checkClosedOrNotConnected();
         down(msg);
+        // CCS begin
+        if (timeMax > 0) {
+            long delay = System.currentTimeMillis() - time;
+            if (delay > timeMax) {
+                log.out(Protocol.ccs_prop_timing.getLevel(), "JChannel.send took "+ delay +" ms. Content: "+ msg.getObject() +" of size "+ msg.size());
+            }
+        }
+        // CCS end
         return this;
     }
 
@@ -747,8 +764,22 @@ public class JChannel implements Closeable {
         if(up_handler != null)
             return up_handler.up(msg);
 
-        if(receiver != null)
-            receiver.receive(msg);
+        // CCS begin
+//        if(receiver != null)
+//            receiver.receive(msg);
+        if (receiver != null) {
+            if (timeMax > 0) {
+                long time = System.currentTimeMillis();
+                receiver.receive(msg);
+                long delay = System.currentTimeMillis() - time;
+                if (delay > timeMax) {
+                    log.out(Protocol.ccs_prop_timing.getLevel(), "JChannel.receive took " + delay + " ms. Content: " + msg.getObject() +" of size "+ msg.size());
+                }
+            } else {
+                receiver.receive(msg);
+            }
+        }
+        // CCS end
         return null;
     }
 

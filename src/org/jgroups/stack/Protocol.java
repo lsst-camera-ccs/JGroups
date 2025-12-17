@@ -67,7 +67,6 @@ public abstract class Protocol implements Lifecycle {
     protected Address              local_addr;
 
     // CCS begin
-//    protected final Log            log=LogFactory.getLog(this.getClass());
     protected final Log            log = new CCSLog(this);
     
     static public final CCSProperty ccs_prop_physical = new CCSProperty("ccs.jg.physical");
@@ -81,6 +80,16 @@ public abstract class Protocol implements Lifecycle {
 
     //** Message loss simulation. Double value [0,1] - portion of lost udp messages. */
     static public final CCSProperty ccs_prop_debug_loss = new CCSProperty("ccs.jg.debug.loss");
+
+    //** Detect and log unusual timing of message processing. Integer value - threshold in milliseconds. */
+    static public final CCSProperty ccs_prop_timing = new CCSProperty("ccs.jg.timing");
+
+    //** Detect and log failure to send a datagram. Log level. */
+    static public final CCSProperty ccs_prop_sendfail = new CCSProperty("ccs.jg.sendfail");
+    
+    static {
+        
+    }
     // CCS end
 
     protected List<Policy>         policies;

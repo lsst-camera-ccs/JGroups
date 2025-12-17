@@ -20,6 +20,7 @@ import java.util.Formatter;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
+import org.jgroups.ccs.CCSLog;
 import org.jgroups.ccs.CCSProperty;
 import org.jgroups.ccs.CCSUtil;
 import org.jgroups.ccs.MessageGate;
@@ -296,7 +297,29 @@ public class UDP extends TP {
         // using the datagram socket to send multicasts or unicasts (https://issues.redhat.com/browse/JGRP-1765)
         if(sock != null) {
             try {
-                sock.send(packet);
+                // CCS begin
+//                sock.send(packet);
+                boolean checkTime = ccs_prop_timing.isLogEnabled(log);
+                boolean checkFail = ccs_prop_sendfail.isLogEnabled(log);
+                long time = checkTime ? System.currentTimeMillis() : 0L;
+                if (checkFail) {
+                    try {
+                        sock.send(packet);
+                    } catch (Exception x) {
+                        log.out(ccs_prop_sendfail.getLevel(), "Failed sending on "+ sock, x);
+                        checkTime = false;
+                        throw x;
+                    }
+                } else {
+                    sock.send(packet);
+                }
+                if (checkTime) {
+                    long delay = System.currentTimeMillis() - time;
+                    if (delay > ccs_prop_timing.getDouble()) {
+                        log.out(ccs_prop_timing.getLevel(), "socket.send(packet) took " + delay + " ms.");
+                    }
+                }
+                // CCS end
             }
             catch(IOException ex) {
                 if(suppress_log_out_of_buffer_space != null)
@@ -533,7 +556,7 @@ public class UDP extends TP {
         }
         IpAddress out = new IpAddress(sock.getLocalAddress(), sock.getLocalPort());
         if (log.isEnabled(level)) {
-            log.out(level, "Created physical address: "+ CCSUtil.toString(out));
+            log.out(level, "Created physical address: "+ CCSLog.toString(out));
         }
         return out;
 

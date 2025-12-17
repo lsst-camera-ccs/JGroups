@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
+import org.jgroups.ccs.CCSLog;
 import org.jgroups.ccs.CCSProperty;
 import org.jgroups.ccs.CCSUtil;
 import static org.jgroups.stack.Protocol.ccs_prop_connect;
@@ -736,12 +737,12 @@ public abstract class Discovery extends Protocol {
         Level level = CCSProperty.getMaxLevel(ccs_prop_physical, ccs_prop_connect);
         if (log.isEnabled(level)) {
             StringBuilder sb = new StringBuilder("Discovery.sendDiscoveryResponse to ");
-            sb.append(CCSUtil.toString(sender)).append(", staggered = ").append(staggered).append(". {");
+            sb.append(CCSLog.toString(sender)).append(", staggered = ").append(staggered).append(". {");
             if (list != null) {
                 list.forEach(d -> {
                     if (d != null) {
                         sb.append(d.getLogicalName()).append(" : ");
-                        sb.append(CCSUtil.toString(d.getAddress())).append(" , ").append(CCSUtil.toString(d.getPhysicalAddr()));
+                        sb.append(CCSLog.toString(d.getAddress())).append(" , ").append(CCSLog.toString(d.getPhysicalAddr()));
                     }
                 });
             } else {

@@ -18,8 +18,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.logging.Level;
+import org.jgroups.ccs.CCSUtil;
 
 import static org.jgroups.protocols.TP.MSG_OVERHEAD;
+import org.jgroups.protocols.pbcast.NakAckHeader2;
+import org.jgroups.stack.Protocol;
 
 /**
  * Implements storing of messages in a hashmap and sending of single messages and message batches. Most bundler
@@ -119,27 +123,81 @@ public abstract class BaseBundler implements Bundler {
 
 
     protected void sendSingleMessage(final Message msg) {
+        // CCS begin
+        boolean ccs = Protocol.ccs_prop_retransmit.isLogEnabled(log);
+        NakAckHeader2 hdr = null;
+        Level level = null;
+        if (ccs) {
+            hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
+            ccs = hdr != null && 
+                 (hdr.getType() == NakAckHeader2.XMIT_RSP || hdr.getType() == NakAckHeader2.XMIT_REQ);
+            if (ccs) level = Protocol.ccs_prop_retransmit.getLevel();
+        }
+        long time1 = ccs ? System.currentTimeMillis() : 0;
+        // CCS end
         Address dest=msg.getDest();
         try {
             Util.writeMessage(msg, output, dest == null);
+            // CCS begin
+            long time2 = ccs ? System.currentTimeMillis() : 0;
+            // CCS end
             transport.doSend(output.buffer(), 0, output.position(), dest);
+            // CCS begin
+            if (ccs) {
+                log.out(level, "BUNDLER: sent "+ NakAckHeader2.type2Str(hdr.getType()) +" {" + hdr.getSeqno() + "} " + msg +
+                        " in "+ (time2-time1) +"+"+ (System.currentTimeMillis() - time2) +" ms.");
+            }
+            // CCS end
             transport.getMessageStats().incrNumSingleMsgsSent();
         }
         catch(Throwable e) {
+            // CCS begin
+            if (ccs) {
+                log.out(level, "BUNDLER: failed "+ NakAckHeader2.type2Str(hdr.getType()) +" {" + hdr.getSeqno() + "} " + msg, e);
+            }
+            // CCS end
             log.trace(Util.getMessage("SendFailure"),
                       transport.getAddress(), (dest == null? "cluster" : dest), msg.size(), e.toString(), msg.printHeaders());
         }
     }
 
-
-
     protected void sendMessageList(final Address dest, final Address src, final List<Message> list) {
+        // CCS begin
+        boolean ccs = Protocol.ccs_prop_retransmit.isLogEnabled(log);
+        List<String> seqnos = null;
+        Level level = null;
+        long time1 = 0;
+        if (ccs) {
+            seqnos = list.stream()
+                    .map(msg -> CCSUtil.getHeader(msg, NakAckHeader2.class))
+                    .filter(hdr -> hdr != null && hdr.getType() == NakAckHeader2.XMIT_RSP)
+                    .map(h -> Long.toString(h.getSeqno())).toList();
+            ccs = !seqnos.isEmpty();
+            if (ccs) {
+                time1 = System.currentTimeMillis();
+                level = Protocol.ccs_prop_retransmit.getLevel();
+            }
+        }
+        // CCS end
         try {
             Util.writeMessageList(dest, src, transport.cluster_name.chars(), list, output, dest == null);
+            // CCS begin
+            long time2 = ccs ? System.currentTimeMillis() : 0;
+            // CCS end
             transport.doSend(output.buffer(), 0, output.position(), dest);
+            // CCS begin
+            if (ccs) {
+                log.out(level, "BUNDLER: retransmitted {" + String.join(",", seqnos) + "} in "+ (time2-time1) +"+"+ (System.currentTimeMillis()-time2) +" ms.");
+            }
+            // CCS end
             transport.getMessageStats().incrNumBatchesSent();
         }
         catch(Throwable e) {
+            // CCS begin
+            if (ccs) {
+                log.out(Protocol.ccs_prop_retransmit.getLevel(), "BUNDLER: Failed retransmission {" + String.join(",", seqnos) + "} ", e);
+            }
+            // CCS end
             log.trace(Util.getMessage("FailureSendingMsgBundle"), transport.getAddress(), e);
         }
     }
