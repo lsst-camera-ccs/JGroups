@@ -25,7 +25,6 @@ public class MessageGate {
     
     private double loss = -1.; // fraction of discarded messages [0,1]
     
-    private long maxSize = 0; // Bytes
     private double maxRate; // Bytes/ns
     
     private long prevDelay, prevTime;
@@ -51,8 +50,7 @@ public class MessageGate {
         loss = fraction;
     }
     
-    public synchronized void setRateLimit(int sizeMB, int rateMB) {
-        maxSize = sizeMB * 1000000L;
+    public synchronized void setRateLimit(int rateMB) {
         maxRate = rateMB / 1e3;
     }
     
@@ -72,7 +70,7 @@ public class MessageGate {
         
         // Limit rate:
         
-        if (maxSize > 0) limitRate(size);
+        limitRate(size);
         return true;
     }
     
@@ -83,26 +81,23 @@ public class MessageGate {
     private void limitRate(int size) {
         if (size <= 0) return;
         long now = System.nanoTime();
-        accSize = Math.max(0L, Math.round(accSize - maxRate*(now-accTime)));
-        accSize += size;
+        accSize = Math.round(accSize - maxRate*(now-accTime));
         accTime = now;
-        if (accSize > maxSize) {
-            long delay = Math.round((accSize - maxSize)/maxRate);
+        if (accSize > 0L) {
+            long delay = Math.round(accSize/maxRate);
             if (delay > MIN_DELAY) {
                 if (delay > prevDelay * VETO_FACTOR || now > prevTime + VETO_TIME) {
-                    if (delay > 1000000000) {
-                        log.out(lev, "Throttle : message of size {0} is held for {1} ms.", new Object[]{size, delay / 1000000});
-                    } else {
-                        log.out(lev, "Throttle : message of size {0} is held for {1} ms.", new Object[]{size, delay / 1000000});
-                    }
                     prevDelay = delay;
                     prevTime = now;
+                    log.out(lev, "Throttle : message of size {0} bytes is held for {1} ms.", new Object[]{size, delay / 1000000});
                 }
                 LockSupport.parkNanos(delay);
                 now = System.nanoTime();
                 accSize = Math.max(0L, Math.round(accSize - maxRate*(now-accTime)));
-                accTime = now;
             }
+            accSize += size;
+        } else {
+            accSize = size;
         }
     }    
 

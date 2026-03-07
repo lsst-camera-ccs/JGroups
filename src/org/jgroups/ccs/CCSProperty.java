@@ -8,9 +8,7 @@ import org.jgroups.logging.Log;
 /**
  * Property used to control run time behavior.
  * Initialized from system properties.
- * Format: [key=]value&...&[key=]value[&LEVEL]
- * 
- * // FIXME: make it faster by creating a map in constructor.
+ * Format: [key=]value;...;[key=]value[;LEVEL]
  *
  * @author onoprien
  */
@@ -33,7 +31,7 @@ public class CCSProperty {
         this.name = name;
         this.value = val == null || val.isBlank() ? null : val.trim();
         if (value == null) {
-            level = Level.OFF;
+            level = Level.ALL;
         } else {
             Level lev = null;
             for (String s : value.split(SEP)) {

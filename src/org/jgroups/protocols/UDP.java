@@ -368,12 +368,10 @@ public class UDP extends TP {
             messageGate = new MessageGate(log, CCSProperty.getMaxLevel(ccs_prop_debug_loss, ccs_prop_throttle));
             messageGate.setMessageLoss(loss);
             log.warn("Simulating losing "+ loss +" of multicast messages.");
-            int maxSize = ccs_prop_throttle.getInt("size");
             int maxRate = ccs_prop_throttle.getInt("rate");
             if (maxRate > 0) {
-                if (maxSize < 1) maxSize = maxRate;
-                messageGate.setRateLimit(maxSize, maxRate);
-                log.info("Throttle message publication at "+ maxSize +" MB, "+ maxRate +" MB/sec.");
+                messageGate.setRateLimit(maxRate);
+                log.info("Throttle message publication at "+ maxRate +" MB/sec.");
             }
         }
         // CCS end
