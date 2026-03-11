@@ -19,6 +19,7 @@ import java.net.*;
 import java.util.Formatter;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.locks.LockSupport;
 import java.util.logging.Level;
 import org.jgroups.ccs.CCSLog;
 import org.jgroups.ccs.CCSProperty;
@@ -305,8 +306,8 @@ public class UDP extends TP {
                 if (checkFail) {
                     try {
                         sock.send(packet);
-                    } catch (Exception x) {
-                        log.out(ccs_prop_sendfail.getLevel(), "Failed sending on "+ sock, x);
+                    } catch (IOException | RuntimeException x) {
+                        log.out(ccs_prop_sendfail.getLevel(), "Failed sending on "+ sock +", size "+ length, x);
                         checkTime = false;
                         throw x;
                     }
@@ -364,14 +365,16 @@ public class UDP extends TP {
 
         // CCS begin
         double loss = ccs_prop_debug_loss.getDouble();
-        if ((!Double.isNaN(loss) && loss > 0. && loss < 1.) || ccs_prop_throttle.isSet()) {
+        if (Double.isNaN(loss) || loss <= 0. || loss >= 1.) {
+            loss = -1.;
+        }
+        if (loss > 0. || ccs_prop_throttle.isSet()) {
             messageGate = new MessageGate(log, CCSProperty.getMaxLevel(ccs_prop_debug_loss, ccs_prop_throttle));
             messageGate.setMessageLoss(loss);
-            log.warn("Simulating losing "+ loss +" of multicast messages.");
-            int maxRate = ccs_prop_throttle.getInt("rate");
+            if (loss > 0.) log.warn("Simulating losing "+ loss +" of multicast messages.");
+            int maxRate = ccs_prop_throttle.getInt();
             if (maxRate > 0) {
                 messageGate.setRateLimit(maxRate);
-                log.info("Throttle message publication at "+ maxRate +" MB/sec.");
             }
         }
         // CCS end

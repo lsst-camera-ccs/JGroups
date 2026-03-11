@@ -15,7 +15,7 @@ public class MessageGate {
 
 // -- Fields : -----------------------------------------------------------------
     
-    static final long MIN_DELAY = 1000; // ns
+    static final long MIN_DELAY = 10000; // ns
     static private final long VETO_TIME = 60*1000000000; // 1 minute
     static private final double VETO_FACTOR = 2;
     
@@ -51,7 +51,7 @@ public class MessageGate {
     }
     
     public synchronized void setRateLimit(int rateMB) {
-        maxRate = rateMB / 1e3;
+        maxRate = rateMB / 1e3; // MB/s --> B/ns
     }
     
 // -----------------------------------------------------------------------------
@@ -89,7 +89,7 @@ public class MessageGate {
                 if (delay > prevDelay * VETO_FACTOR || now > prevTime + VETO_TIME) {
                     prevDelay = delay;
                     prevTime = now;
-                    log.out(lev, "Throttle : message of size {0} bytes is held for {1} ms.", new Object[]{size, delay / 1000000});
+                    log.out(lev, "Throttle : message of size "+ size +" bytes is held for "+ (delay / 1000000) +" ms.");
                 }
                 LockSupport.parkNanos(delay);
                 now = System.nanoTime();

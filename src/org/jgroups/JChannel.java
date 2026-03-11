@@ -69,6 +69,8 @@ public class JChannel implements Closeable {
 //    protected final Log                             log=LogFactory.getLog(getClass());
     protected final Log log = new CCSLog(this);
     private final int timeMax = Protocol.ccs_prop_timing.getInt();
+    private volatile int maxSize, maxSizeVeto;
+    private volatile long maxSizeTime, maxSizeTimeVeto;
     // CCS end
     protected List<AddressGenerator>                address_generators;
     protected final Promise<StateTransferResult>    state_promise=new Promise<>();
@@ -202,6 +204,32 @@ public class JChannel implements Closeable {
     public JChannel      stats(boolean stats)                {this.stats=stats; return this;}
     public boolean       getDiscardOwnMessages()             {return discard_own_messages;}
     public JChannel      setDiscardOwnMessages(boolean flag) {discard_own_messages=flag; return this;}
+    
+    // CCS begin
+    private void ccsInit(String cluster_name) {
+        
+        if ("STATUS".equals(cluster_name)) {
+            StringBuilder sb = new StringBuilder("JGroups CCS properties:").append(System.lineSeparator());
+            sb.append(Protocol.ccs_prop_connect).append(System.lineSeparator());
+            sb.append(Protocol.ccs_prop_physical).append(System.lineSeparator());
+            sb.append(Protocol.ccs_prop_retransmit).append(System.lineSeparator());
+            sb.append(Protocol.ccs_prop_throttle).append(System.lineSeparator());
+            sb.append(Protocol.ccs_prop_sendfail).append(System.lineSeparator());
+            sb.append(Protocol.ccs_prop_size).append(System.lineSeparator());
+            sb.append(Protocol.ccs_prop_timing).append(System.lineSeparator());
+            sb.append(Protocol.ccs_prop_debug_loss).append(System.lineSeparator());
+            log.setLevel("info"); // FIXME: this should not be necessary, the level is messed up somewhere in JGroups
+            log.info(sb.toString());
+        }
+        
+        maxSizeVeto = Protocol.ccs_prop_size.getInt("vetoSize");
+        maxSizeVeto = maxSizeVeto == Integer.MIN_VALUE ? 1000000 : maxSizeVeto * 1000000;
+        maxSizeTimeVeto = Protocol.ccs_prop_size.getInt("vetoTime");
+        maxSizeTimeVeto = maxSizeTimeVeto == Integer.MIN_VALUE ? 60000 : maxSizeTimeVeto * 1000;
+        maxSize = maxSizeVeto;
+        maxSizeTime = System.currentTimeMillis();
+    }
+    // CCS end
 
     @Deprecated(since="5.3.5",forRemoval=true)
     public boolean       flushSupported()                    {return flush_supported;}
@@ -324,6 +352,9 @@ public class JChannel implements Closeable {
      */
     @ManagedOperation(description="Connects the channel to a group")
     public synchronized JChannel connect(String cluster_name) throws Exception {
+        // CCS begin
+        ccsInit(cluster_name);
+        // CCS end
         return connect(cluster_name, true);
     }
 
@@ -455,11 +486,30 @@ public class JChannel implements Closeable {
      * @exception IllegalStateException thrown if the channel is disconnected or closed
      */
     public JChannel send(Message msg) throws Exception {
-        // CCS begin
-        long time = timeMax > 0 ? System.currentTimeMillis() : 0L;
-        // CCS end
         if(msg == null)
             throw new NullPointerException("msg is null");
+        // CCS begin
+        long now = System.currentTimeMillis();
+        long time = timeMax > 0 ? now : 0L;
+        if (log.isEnabled(Protocol.ccs_prop_size.getLevel())) {
+            try {
+                int size = msg.getLength();
+                if (size > maxSize * 1.2) {
+                    log.out(Protocol.ccs_prop_size.getLevel(), "Large message is beein sent: "+ size +" bytes. "+ msg);
+                    maxSize = size;
+                    maxSizeTime = now;
+                } else if (now > maxSizeTime + maxSizeTimeVeto) {
+                    maxSize = maxSizeVeto;
+                    maxSizeTime = now;
+                }
+            } catch (RuntimeException x) {
+                if (now > maxSizeTime + maxSizeTimeVeto) {
+                    log.out(Protocol.ccs_prop_size.getLevel(), "Unable to compute message size", x);
+                    maxSizeTime = now + 60000 + maxSizeTimeVeto;
+                }
+            }
+        }
+        // CCS end
         checkClosedOrNotConnected();
         down(msg);
         // CCS begin

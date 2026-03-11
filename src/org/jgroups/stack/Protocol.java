@@ -89,16 +89,33 @@ public abstract class Protocol implements Lifecycle {
      */
     static public final CCSProperty ccs_prop_retransmit = new CCSProperty("ccs.jg.retransmit");
     
-    /** Throttle message publication at int "rate" MB/sec. */
+    /**
+     * Throttle message publication at int rate (MB/sec).
+     * Example: system.property.ccs.jg.throttle=100;FINE
+     */
     static public final CCSProperty ccs_prop_throttle = new CCSProperty("ccs.jg.throttle");
 
-    //** Message loss simulation. Double value [0,1] - portion of lost udp messages. */
+    /** Message loss simulation. Double value [0,1] - portion of lost udp messages. */
     static public final CCSProperty ccs_prop_debug_loss = new CCSProperty("ccs.jg.debug.loss");
 
-    //** Detect and log unusual timing of message processing. Integer value - threshold in milliseconds. */
+    /**
+     * Detect and log unusual timing of message processing. Integer value - threshold in milliseconds.
+     * Example: system.property.ccs.jg.timing=500;INFO
+     */
     static public final CCSProperty ccs_prop_timing = new CCSProperty("ccs.jg.timing");
 
-    //** Detect and log failure to send a datagram. Log level. */
+    /**
+     * Detect and log larger than previously published messages.
+     * int vetoSize - MB, do not detect below this size; default 1.
+     * int vetoTime - seconds, reset previous size after this time; default .
+     * Example: system.property.ccs.jg.size=vetoSize:1;vetoTime:60;FINE
+     */
+    static public final CCSProperty ccs_prop_size = new CCSProperty("ccs.jg.size");
+
+    /**
+     * Detect and log failure to send a datagram. Log level.
+     * Example: system.property.ccs.jg.sendfail=INFO
+     */
     static public final CCSProperty ccs_prop_sendfail = new CCSProperty("ccs.jg.sendfail");
     
     static {
