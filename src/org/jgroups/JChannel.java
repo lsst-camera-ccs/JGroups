@@ -218,8 +218,7 @@ public class JChannel implements Closeable {
             sb.append(Protocol.ccs_prop_size).append(System.lineSeparator());
             sb.append(Protocol.ccs_prop_timing).append(System.lineSeparator());
             sb.append(Protocol.ccs_prop_debug_loss).append(System.lineSeparator());
-            log.setLevel("info"); // FIXME: this should not be necessary, the level is messed up somewhere in JGroups
-            log.info(sb.toString());
+            log.warn(sb.toString());
         }
         
         maxSizeVeto = Protocol.ccs_prop_size.getInt("vetoSize");
