@@ -180,7 +180,10 @@ public class SeqnoList extends FixedSizeBitSet implements SizeStreamable, Iterab
 
     protected int index(long seqno) {return (int)(seqno-offset);}
 
-    protected long seqno(int index) {return offset + index;}
+    // CCS begin
+    public long seqno(int index) {return offset + index;}
+//    protected long seqno(int index) {return offset + index;}
+    // CCS end
 
 
     protected class SeqnoListIterator implements Iterator<Long> {
