@@ -23,10 +23,6 @@ import java.util.logging.Level;
 import java.util.stream.Collectors;
 import org.jgroups.ccs.CCSLog;
 import org.jgroups.ccs.CCSProperty;
-import org.jgroups.ccs.CCSUtil;
-import static org.jgroups.stack.Protocol.ccs_prop_connect;
-import static org.jgroups.stack.Protocol.ccs_prop_physical;
-
 
 /**
  * The Discovery protocol retrieves the initial membership (used by GMS and MERGE3) by sending discovery requests.
