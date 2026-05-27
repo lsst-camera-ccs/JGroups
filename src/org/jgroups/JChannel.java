@@ -494,7 +494,7 @@ public class JChannel implements Closeable {
             try {
                 int size = msg.getLength();
                 if (size > maxSize * 1.2) {
-                    log.out(Protocol.ccs_prop_size.getLevel(), "Large message is beein sent: "+ size +" bytes. "+ msg);
+                    log.out(Protocol.ccs_prop_size.getLevel(), "Large message is being sent: "+ size +" bytes. "+ msg);
                     maxSize = size;
                     maxSizeTime = now;
                 } else if (now > maxSizeTime + maxSizeTimeVeto) {

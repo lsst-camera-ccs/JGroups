@@ -117,10 +117,6 @@ public abstract class Protocol implements Lifecycle {
      * Example: system.property.ccs.jg.sendfail=INFO
      */
     static public final CCSProperty ccs_prop_sendfail = new CCSProperty("ccs.jg.sendfail");
-    
-    static {
-        
-    }
     // CCS end
 
     protected List<Policy>         policies;

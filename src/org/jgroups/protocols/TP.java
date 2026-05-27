@@ -378,30 +378,6 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
     //https://issues.redhat.com/browse/JGRP-849
     protected final ReentrantLock connectLock = new ReentrantLock();
     
-    // CCS begin
-    private final ConcurrentHashMap<Address, Set<Long>> expectedRetransmissions = new ConcurrentHashMap<>();
-    private long addExpectedRetransmission(Message msg) {
-        try {
-            NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
-            if (hdr.getType() == NakAckHeader2.XMIT_REQ) {
-                long seqno = hdr.getSeqno();
-                Address dest = msg.getDest();
-                Set<Long> seqnos = expectedRetransmissions.computeIfAbsent(dest, a -> Collections.synchronizedSet(new TreeSet<>()));
-                return seqnos.add(seqno) ? seqno : -1;
-            }
-        } catch (RuntimeException x) {
-        }
-        return -1;
-    }
-    private void removeExpectedRetransmissions(Address source, List<String> seqnos) {
-        Set<Long> expected = expectedRetransmissions.get(source);
-        if (expected != null) {
-            synchronized (expected) {
-                seqnos.forEach(s -> expected.remove(Long.valueOf(s)));
-            }
-        }
-    }
-    // CCS end
 
     // ================================== Thread pool ======================
 
@@ -1195,14 +1171,6 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
     }
 
     protected void _send(Message msg, Address dest) {
-        // CCS begin : remember our retransmission requests
-        if (dest != null && ccs_prop_retransmit.isLogEnabled(log)) {
-            long seqno = addExpectedRetransmission(msg);
-            if (seqno != -1) {
-                log.out(ccs_prop_retransmit.getLevel(), "TP: retransmit request {" + seqno + "} to " + CCSLog.toString(dest));
-            }
-        }
-        // CCS end
         try {
             Bundler tmp_bundler=bundler;
             if(tmp_bundler != null) {
@@ -1365,32 +1333,9 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
 
 
     protected void handleMessageBatch(DataInput in, boolean multicast, MessageFactory factory) {
-        // CCS begin
-        boolean ccs = ccs_prop_retransmit.isLogEnabled(log);
-        long time = ccs ? System.currentTimeMillis() : 0;
-        // CCS end
         try {
             final MessageBatch[] batches=Util.readMessageBatch(in, multicast, factory);
             final MessageBatch regular=batches[0], oob=batches[1];
-            // CCS begin
-            if (ccs) {
-                List<String> seqnos = new ArrayList<>();
-                Address sender = regular.getSender();
-                for (Iterator<Message> it = regular.iterator(); it.hasNext();) {
-                    Message msg = it.next();
-                    NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
-                    if (hdr != null && hdr.getType() == NakAckHeader2.XMIT_RSP) {
-                        seqnos.add(Long.toString(hdr.getSeqno()));
-                    }
-                }
-                if (!seqnos.isEmpty()) {
-                    removeExpectedRetransmissions(sender, seqnos);
-                    log.out(ccs_prop_retransmit.getLevel(), "TP: retransmission received from "+ sender +" {" + String.join(",", seqnos) + "} in "+ (System.currentTimeMillis()-time) +" ms.");
-                } else if (expectedRetransmissions.containsKey(sender)) {
-                    log.out(ccs_prop_retransmit.getLevel(), "TP: received new messages {"+ String.join(",", seqnos) +"} from "+ sender);
-                }
-            }
-            // CCS end
 
             // we need to update the stats *before* processing the batches: protocols can remove msgs from the batch
             if(oob != null) msg_stats.received(oob);

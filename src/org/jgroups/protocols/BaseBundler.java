@@ -14,16 +14,19 @@ import org.jgroups.util.Util;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
+import org.jgroups.ccs.CCSLog;
 import org.jgroups.ccs.CCSUtil;
 
 import static org.jgroups.protocols.TP.MSG_OVERHEAD;
 import org.jgroups.protocols.pbcast.NakAckHeader2;
 import org.jgroups.stack.Protocol;
+import org.jgroups.util.SeqnoList;
 
 /**
  * Implements storing of messages in a hashmap and sending of single messages and message batches. Most bundler
@@ -127,11 +130,26 @@ public abstract class BaseBundler implements Bundler {
         boolean ccs = Protocol.ccs_prop_retransmit.isLogEnabled(log);
         NakAckHeader2 hdr = null;
         Level level = null;
+        StringBuilder sb = null;
         if (ccs) {
             hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
             ccs = hdr != null && 
-                 (hdr.getType() == NakAckHeader2.XMIT_RSP || hdr.getType() == NakAckHeader2.XMIT_REQ);
-            if (ccs) level = Protocol.ccs_prop_retransmit.getLevel();
+                 (hdr.getType() == NakAckHeader2.XMIT_RSP || hdr.getType() == NakAckHeader2.XMIT_REQ || msg.isFlagSet(Message.TransientFlag.DONT_BLOCK));
+            if (ccs) {
+                level = Protocol.ccs_prop_retransmit.getLevel();
+                sb = new StringBuilder();
+                sb.append("BaseBundler: sent retransmit ").append(NakAckHeader2.type2Str(hdr.getType())).append(" ");
+                if (hdr.getType() == NakAckHeader2.XMIT_REQ) {
+                    if (msg.getObject() instanceof SeqnoList s) {
+                        sb.append(s);
+                    } else {
+                        sb.append("{unknown}");
+                    }
+                } else {
+                    sb.append("{").append(hdr.getSeqno()).append("}");
+                }
+                sb.append(". Message: ").append(msg);
+            }
         }
         long time1 = ccs ? System.currentTimeMillis() : 0;
         // CCS end
@@ -144,8 +162,8 @@ public abstract class BaseBundler implements Bundler {
             transport.doSend(output.buffer(), 0, output.position(), dest);
             // CCS begin
             if (ccs) {
-                log.out(level, "BUNDLER: sent "+ NakAckHeader2.type2Str(hdr.getType()) +" {" + hdr.getSeqno() + "} " + msg +
-                        " in "+ (time2-time1) +"+"+ (System.currentTimeMillis() - time2) +" ms.");
+                sb.append(" Timing: ").append(time2-time1).append(" + ").append(System.currentTimeMillis() - time2).append(" ms.");
+                log.out(level, sb.toString());
             }
             // CCS end
             transport.getMessageStats().incrNumSingleMsgsSent();
@@ -153,7 +171,7 @@ public abstract class BaseBundler implements Bundler {
         catch(Throwable e) {
             // CCS begin
             if (ccs) {
-                log.out(level, "BUNDLER: failed "+ NakAckHeader2.type2Str(hdr.getType()) +" {" + hdr.getSeqno() + "} " + msg, e);
+                log.out(level, sb.append(" FAILED.").toString(), e);
             }
             // CCS end
             log.trace(Util.getMessage("SendFailure"),
@@ -164,18 +182,36 @@ public abstract class BaseBundler implements Bundler {
     protected void sendMessageList(final Address dest, final Address src, final List<Message> list) {
         // CCS begin
         boolean ccs = Protocol.ccs_prop_retransmit.isLogEnabled(log);
-        List<String> seqnos = null;
         Level level = null;
         long time1 = 0;
+        List<String> requests = new LinkedList<>();
+        List<String> responses = new LinkedList<>();
+        StringBuilder sb = null;
         if (ccs) {
-            seqnos = list.stream()
-                    .map(msg -> CCSUtil.getHeader(msg, NakAckHeader2.class))
-                    .filter(hdr -> hdr != null && hdr.getType() == NakAckHeader2.XMIT_RSP)
-                    .map(h -> Long.toString(h.getSeqno())).toList();
-            ccs = !seqnos.isEmpty();
+            for (Message msg : list) {
+                NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
+                if (hdr != null) {
+                    byte type = hdr.getType();
+                    if (type == NakAckHeader2.XMIT_REQ && msg.getObject() instanceof SeqnoList seqnoList) {
+                        requests.add(seqnoList.toString());
+                    } else if ((msg.isFlagSet(Message.TransientFlag.DONT_BLOCK) && type == NakAckHeader2.MSG) || type == NakAckHeader2.XMIT_RSP) {
+                        responses.add(Long.toString(hdr.getSeqno()));
+                    }
+                }
+            }
+            ccs = !(requests.isEmpty() && responses.isEmpty());
             if (ccs) {
                 time1 = System.currentTimeMillis();
                 level = Protocol.ccs_prop_retransmit.getLevel();
+                sb = new StringBuilder();
+                sb.append("BaseBundler: sending retransmit bundle. ");
+                if (!requests.isEmpty()) {
+                    sb.append("Requests: ").append(String.join(", ", requests)).append(". ");
+                }
+                if (!responses.isEmpty()) {
+                    sb.append("Responses: ").append(String.join(", ", responses)).append(". ");
+                }
+                sb.append(" Destination: ").append(CCSLog.toString(dest));
             }
         }
         // CCS end
@@ -187,7 +223,8 @@ public abstract class BaseBundler implements Bundler {
             transport.doSend(output.buffer(), 0, output.position(), dest);
             // CCS begin
             if (ccs) {
-                log.out(level, "BUNDLER: retransmitted {" + String.join(",", seqnos) + "} in "+ (time2-time1) +"+"+ (System.currentTimeMillis()-time2) +" ms.");
+                sb.append(" Timing: ").append(time2-time1).append(" + ").append(System.currentTimeMillis() - time2).append(" ms.");
+                log.out(level, sb.toString());
             }
             // CCS end
             transport.getMessageStats().incrNumBatchesSent();
@@ -195,7 +232,7 @@ public abstract class BaseBundler implements Bundler {
         catch(Throwable e) {
             // CCS begin
             if (ccs) {
-                log.out(Protocol.ccs_prop_retransmit.getLevel(), "BUNDLER: Failed retransmission {" + String.join(",", seqnos) + "} ", e);
+                log.out(Protocol.ccs_prop_retransmit.getLevel(), sb.append(" FAILED.").toString(), e);
             }
             // CCS end
             log.trace(Util.getMessage("FailureSendingMsgBundle"), transport.getAddress(), e);

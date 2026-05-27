@@ -259,7 +259,6 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
     protected SuppressLog<Address>      suppress_log_non_member;
     
     // CCS begin
-    private final boolean ccs_retransmit_suppress = ccs_prop_retransmit.getBoolean("suppress");
     private final Map<Long,Long> xmit_prev = new ConcurrentHashMap<>(); // seqno -> millis time of last retransmission
     // CCS end
 
@@ -750,13 +749,6 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
                     if(xmitted_msg != null) {
                         it.replace(xmitted_msg);
                         got_retransmitted_msg=true;
-                        // CCS begin
-                        if (log.isEnabled(ccs_prop_retransmit.getLevel())) {
-                            long sn = ((NakAckHeader2) (xmitted_msg.getHeader(this.id))).getSeqno();
-                            log.out(ccs_prop_retransmit.getLevel(), "NAKACK2: received retransmission {" + sn + "} " + xmitted_msg);
-                            
-                        }
-                        // CCS end
                     }
                     break;
                 case NakAckHeader2.HIGHEST_SEQNO:
@@ -874,16 +866,6 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
 
 
     protected void resend(Message msg) { // needed for byteman ProtPerf script - don't remove!
-        // CCS begin
-        if (ccs_prop_retransmit.isSet()) {
-            try {
-                long sn = ((NakAckHeader2) (msg.getHeader(this.id))).getSeqno();
-                log.out(ccs_prop_retransmit.getLevel(), "NAKACK2: retransmitting {" + sn + "} "+ msg);
-            } catch (RuntimeException x) {
-                log.out(ccs_prop_retransmit.getLevel(), "NAKACK2: unable to extract message number from retransmission: " + msg + ".");
-            }
-        }
-        // CCS end
         down_prot.down(msg);
     }
 
@@ -1004,7 +986,7 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
         // CCS begin
         if (ccs_prop_retransmit.isSet()) {
             if (original_sender.equals(local_addr)) {
-                if (ccs_retransmit_suppress && use_mcast_xmit) { // suppress retransmission of messages that were retransmitted less that xmit_interval/2 ago
+                if (ccs_prop_retransmit.getBoolean("suppress") && use_mcast_xmit) { // suppress retransmission of messages that were retransmitted less that xmit_interval/2 ago
                     int n = missing_msgs.size();
                     String[] pass = new String[n];
                     int passIndex = 0;
@@ -1013,12 +995,12 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
                     int i = 0;
                     long now = System.currentTimeMillis();
                     while ((i = missing_msgs.nextSetBit(i)) != -1) {
-                        long seqno = missing_msgs.seqno(i);
-                        long t = xmit_prev.merge(seqno, now, (old, cur) -> (cur-old)>(xmit_interval/2) ? cur : old-1);
+                        long sn = missing_msgs.seqno(i);
+                        long t = xmit_prev.merge(sn, now, (old, cur) -> (cur-old)>(xmit_interval/2) ? cur : old-1);
                         if (t == now) {
-                            pass[passIndex++] = Long.toString(seqno);
+                            pass[passIndex++] = Long.toString(sn);
                         } else {
-                            suppress[suppressIndex++] = Long.toString(seqno);
+                            suppress[suppressIndex++] = Long.toString(sn);
                             missing_msgs.clear(i);
                         }
                     }
@@ -1035,7 +1017,7 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
                     log.out(ccs_prop_retransmit.getLevel(), "NAKACK2: retransmit request from "+ CCSLog.toString(xmit_requester) +" FOR "+ missing_msgs);
                 }
             } else {
-                log.warn("NAKACK2: why am I handling retransmit request from "+ CCSLog.toString(xmit_requester) +" for "+ CCSLog.toString(original_sender));
+                log.warn("NAKACK2: why am I handling retransmit request from "+ CCSLog.toString(xmit_requester) +" to "+ CCSLog.toString(original_sender));
             }
         }
         // CCS end
@@ -1164,11 +1146,6 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
     protected void handleXmitRsp(Message msg, NakAckHeader2 hdr) {
         if(msg == null)
             return;
-        // CCS begin
-        if (log.isEnabled(ccs_prop_retransmit.getLevel())) {
-            log.out(ccs_prop_retransmit.getLevel(), "NAKACK2: received retransmission {" + hdr.getSeqno() + "} " + msg);
-        }
-        // CCS end
 
         try {
             if(stats)
@@ -1647,7 +1624,7 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
             last_seqno_resender.execute(seqno.get());
         
         // CCS begin
-        if (ccs_retransmit_suppress) {
+        if (ccs_prop_retransmit.getBoolean("suppress")) {
             long deadline = System.currentTimeMillis() - xmit_interval / 2;
             Iterator<Map.Entry<Long, Long>> it = xmit_prev.entrySet().iterator();
             while (it.hasNext()) {

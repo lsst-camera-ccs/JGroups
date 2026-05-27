@@ -1,7 +1,10 @@
 package org.jgroups.ccs;
 
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.logging.Level;
 import org.jgroups.logging.Log;
 
@@ -23,7 +26,9 @@ public class CCSProperty {
     private final Level levelValue;
     private final int intValue;
     private final double doubleValue;
+    private final boolean booleanValue;
     private final Map<String,String> data;
+    private final Set<String> keys; // all keys except those mapped to "false"
     
     public CCSProperty(String name) {
         this(name, (System.getProperty(name) == null || System.getProperty(name).isBlank()) ? null : System.getProperty(name));
@@ -37,11 +42,14 @@ public class CCSProperty {
             levelValue = Level.ALL;
             intValue = Integer.MIN_VALUE;
             doubleValue = Double.NaN;
+            booleanValue = false;
+            keys = Collections.emptySet();
         } else {
             data = new LinkedHashMap<>();
             Level levelV = null;
             int intV = Integer.MIN_VALUE;
             double doubleV = Double.NaN;
+            boolean booleanV = false;
             for (String s : value.split(SEP)) {
                 if (!s.isBlank()) {
                     String[] ss = s.split(MAP);
@@ -73,7 +81,11 @@ public class CCSProperty {
                                                 throw new RuntimeException("Illegal property: " + val + ". More than one unnamed double value.");
                                             }
                                         } catch (NumberFormatException xxx) {
-                                            data.put(k, "");
+                                            if ("true".equalsIgnoreCase(k)) {
+                                                booleanV = true;
+                                            } else {
+                                                data.put(k, "");
+                                            }
                                         }
                                     }
                                 }
@@ -99,9 +111,16 @@ public class CCSProperty {
             levelValue = levelV == null ? Level.INFO : levelV;
             intValue = intV;
             doubleValue = Double.isNaN(doubleV) ? (intV == Integer.MIN_VALUE ? Double.NaN : intV) : doubleV;
+            booleanValue = booleanV;
+            keys = new HashSet<>();
+            data.forEach((k,v) -> {
+                if (!"false".equalsIgnoreCase(k)) {
+                    keys.add(k);
+                }
+            });
         }
     }
-        
+
     /**
      * Returns the maximum logging level among those associated with the specified properties.
      * @param properties Properties to check
@@ -188,9 +207,15 @@ public class CCSProperty {
      * @return True if {@code key} is mapped to anything other than "false" (ignore case), or is present without a key.
      */
     public boolean getBoolean(String key) {
-        if (data == null) return false;
-        String v = data.get(key);
-        return v != null && !"false".equalsIgnoreCase(v);
+        return keys.contains(key);
+    }
+    
+    /**
+     * Returns {@code boolean} value not associated with any key. 
+     * @return {@code true} if the definition string contains "true" (ignore case) value without a key.
+     */
+    public boolean getBoolean() {
+        return booleanValue;
     }
     
     /**
