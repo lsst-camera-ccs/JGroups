@@ -74,35 +74,35 @@ public abstract class Protocol implements Lifecycle {
      * and diagnostic logging is done at the specified level.
      * Example: system.property.ccs.jg.physical=FINE.
      */
-    static public final CCSProperty ccs_prop_physical = new CCSProperty("ccs.jg.physical");
+    static public final CCSProperty ccs_prop_physical = CCSProperty.make("ccs.jg.physical");
     
     /**
      * If set, diagnostic logging related to the initial connection is done at the specified level.
      * Example: system.property.ccs.jg.connect=FINE.
      */
-    static public final CCSProperty ccs_prop_connect = new CCSProperty("ccs.jg.connect");
+    static public final CCSProperty ccs_prop_connect = CCSProperty.make("ccs.jg.connect");
     
     /**
      * Interfere with message retransmission. 
      * Logs warnings on any retransmission errors.
      * bool "suppress".
      */
-    static public final CCSProperty ccs_prop_retransmit = new CCSProperty("ccs.jg.retransmit");
+    static public final CCSProperty ccs_prop_retransmit = CCSProperty.make("ccs.jg.retransmit");
     
     /**
      * Throttle message publication at int rate (MB/sec).
      * Example: system.property.ccs.jg.throttle=100;FINE
      */
-    static public final CCSProperty ccs_prop_throttle = new CCSProperty("ccs.jg.throttle");
+    static public final CCSProperty ccs_prop_throttle = CCSProperty.make("ccs.jg.throttle");
 
     /** Message loss simulation. Double value [0,1] - portion of lost udp messages. */
-    static public final CCSProperty ccs_prop_debug_loss = new CCSProperty("ccs.jg.debug.loss");
+    static public final CCSProperty ccs_prop_debug_loss = CCSProperty.make("ccs.jg.debug.loss");
 
     /**
      * Detect and log unusual timing of message processing. Integer value - threshold in milliseconds.
      * Example: system.property.ccs.jg.timing=500;INFO
      */
-    static public final CCSProperty ccs_prop_timing = new CCSProperty("ccs.jg.timing");
+    static public final CCSProperty ccs_prop_timing = CCSProperty.make("ccs.jg.timing");
 
     /**
      * Detect and log larger than previously published messages.
@@ -110,13 +110,13 @@ public abstract class Protocol implements Lifecycle {
      * int vetoTime - seconds, reset previous size after this time; default .
      * Example: system.property.ccs.jg.size=vetoSize:1;vetoTime:60;FINE
      */
-    static public final CCSProperty ccs_prop_size = new CCSProperty("ccs.jg.size");
+    static public final CCSProperty ccs_prop_size = CCSProperty.make("ccs.jg.size");
 
     /**
      * Detect and log failure to send a datagram. Log level.
      * Example: system.property.ccs.jg.sendfail=INFO
      */
-    static public final CCSProperty ccs_prop_sendfail = new CCSProperty("ccs.jg.sendfail");
+    static public final CCSProperty ccs_prop_sendfail = CCSProperty.make("ccs.jg.sendfail");
     // CCS end
 
     protected List<Policy>         policies;

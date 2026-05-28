@@ -1,10 +1,10 @@
 package org.jgroups.ccs;
 
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import org.jgroups.logging.Log;
 
@@ -17,35 +17,54 @@ import org.jgroups.logging.Log;
  */
 public class CCSProperty {
     
+    static private final Map<String, CCSProperty> knownProperties = new ConcurrentHashMap<>();
+    
     static private final String SEP = ";";
     static private final String MAP = ":";
     
     private final String name;
-    private final String value;
     
-    private final Level levelValue;
-    private final int intValue;
-    private final double doubleValue;
-    private final boolean booleanValue;
-    private final Map<String,String> data;
-    private final Set<String> keys; // all keys except those mapped to "false"
+    private volatile Level levelValue; // Unnamed level, or ALL
+    private volatile int intValue; // unnamed int, or Integer.MIN_VALUE
+    private volatile double doubleValue; // unnamed double, or Double.NaN
+    private volatile boolean booleanValue; // unnamed boolean, or false
+    private volatile Map<String,String> data; // null if property not set
     
-    public CCSProperty(String name) {
+    // -- Life cycle : ---------------------------------------------------------
+    
+    CCSProperty(String name) {
         this(name, (System.getProperty(name) == null || System.getProperty(name).isBlank()) ? null : System.getProperty(name));
     }
     
-    public CCSProperty(String name, String val) {
+    CCSProperty(String name, String val) {
         this.name = name;
-        this.value = val == null || val.isBlank() ? null : val.trim();
-        if (value == null) {
+    }
+    
+    static public CCSProperty make(String name) {
+        CCSProperty p = new CCSProperty(name);
+        if (knownProperties.putIfAbsent(name, p) == null) {
+            return p;
+        } else {
+            throw new IllegalArgumentException("Duplicate JGroups CCSProperty name: "+ name);
+        }
+    }
+    
+    static public CCSProperty get(String name) {
+        return knownProperties.get(name);
+    }
+    
+    
+    // -- Setters : ------------------------------------------------------------
+    
+    synchronized public final CCSProperty set(String value) {
+        if (value == null || value.isBlank()) {
             data = null;
             levelValue = Level.ALL;
             intValue = Integer.MIN_VALUE;
             doubleValue = Double.NaN;
             booleanValue = false;
-            keys = Collections.emptySet();
         } else {
-            data = new LinkedHashMap<>();
+            Map<String,String> dataV = new TreeMap<>();
             Level levelV = null;
             int intV = Integer.MIN_VALUE;
             double doubleV = Double.NaN;
@@ -56,13 +75,13 @@ public class CCSProperty {
                     switch (ss.length) {
                         case 1 -> {
                             String k = ss[0].trim();
-                            if (!k.isEmpty()) {
+                            if (!k.isEmpty() && !"false".equalsIgnoreCase(k)) {
                                 try {
                                     int v = Integer.parseInt(k);
                                     if (intV == Integer.MIN_VALUE) {
                                         intV = v;
                                     } else {
-                                        throw new RuntimeException("Illegal property: "+ val +". More than one unnamed integer value.");
+                                        throw new RuntimeException("Illegal property: "+ value +". More than one unnamed integer value.");
                                     }
                                 } catch (NumberFormatException x) {
                                     try {
@@ -70,7 +89,7 @@ public class CCSProperty {
                                         if (levelV == null) {
                                             levelV = v;
                                         } else {
-                                            throw new RuntimeException("Illegal property: "+ val +". More than one unnamed log level.");
+                                            throw new RuntimeException("Illegal property: "+ value +". More than one unnamed log level.");
                                         }
                                     } catch (IllegalArgumentException xx) {
                                         try {
@@ -78,13 +97,13 @@ public class CCSProperty {
                                             if (Double.isNaN(doubleV)) {
                                                 doubleV = v;
                                             } else {
-                                                throw new RuntimeException("Illegal property: " + val + ". More than one unnamed double value.");
+                                                throw new RuntimeException("Illegal property: " + value + ". More than one unnamed double value.");
                                             }
                                         } catch (NumberFormatException xxx) {
                                             if ("true".equalsIgnoreCase(k)) {
                                                 booleanV = true;
                                             } else {
-                                                data.put(k, "");
+                                                dataV.put(k, "");
                                             }
                                         }
                                     }
@@ -94,17 +113,45 @@ public class CCSProperty {
                         case 2 -> {
                             String k = ss[0].trim();
                             String v = ss[1].trim();
-                            if (levelV == null && "level".equalsIgnoreCase(k)) {
-                                try {
-                                    levelV = Level.parse(v);
-                                } catch (IllegalArgumentException x) {
-                                    data.put(k, v);
+                            if (!"false".equalsIgnoreCase(v)) {
+                                switch (k) {
+                                    case "boolean" -> {
+                                        if ("true".equalsIgnoreCase(k)) {
+                                            booleanV = true;
+                                        } else {
+                                            throw new IllegalArgumentException(v +" cannot be converted to boolean.");
+                                        }
+                                    }
+                                    case "int" -> {
+                                        if (intV == Integer.MIN_VALUE) {
+                                                intV = Integer.parseInt(v);
+                                        } else {
+                                            throw new IllegalArgumentException("Illegal property: " + value + ". More than one unnamed integer value.");
+                                        }
+                                    }
+                                    case "double" -> {
+                                        if (doubleV == Double.NaN) {
+                                            doubleV = Double.parseDouble(v);
+                                        } else {
+                                            throw new IllegalArgumentException("Illegal property: " + value + ". More than one unnamed double value.");
+                                        }
+                                    }
+                                    case "level" -> {
+                                        if (levelV == Level.ALL) {
+                                            levelV = Level.parse(v);
+                                        } else {
+                                            throw new IllegalArgumentException("Illegal property: " + value + ". More than one unnamed double value.");
+                                        }
+                                    }
+                                    default -> {
+                                        dataV.put(k, v);
+                                    }
                                 }
-                            } else {
-                                data.put(k, v);
                             }
                         }
-                        default -> {}
+                        default -> {
+                            throw new RuntimeException("Illegal property: " + value +".");
+                        }
                     }
                 }
             }
@@ -112,14 +159,107 @@ public class CCSProperty {
             intValue = intV;
             doubleValue = Double.isNaN(doubleV) ? (intV == Integer.MIN_VALUE ? Double.NaN : intV) : doubleV;
             booleanValue = booleanV;
-            keys = new HashSet<>();
-            data.forEach((k,v) -> {
-                if (!"false".equalsIgnoreCase(k)) {
-                    keys.add(k);
-                }
-            });
+            data = dataV;
         }
+        return this;
     }
+    
+    synchronized public final CCSProperty modify(String key, String value) {
+        if (key == null || key.isBlank()) key = "";
+        if (value == null || value.isBlank()) value = "";
+        if (key.isEmpty()) { // unnamed value
+            if (value.isEmpty()) {
+                throw new IllegalArgumentException("No key, no value.");
+            } else {
+                try {
+                    intValue = Integer.parseInt(value);
+                    doubleValue = intValue;
+                } catch (NumberFormatException x) {
+                    try {
+                        levelValue = Level.parse(value);
+                    } catch (IllegalArgumentException xx) {
+                        try {
+                            doubleValue = Double.parseDouble(value);
+                        } catch (NumberFormatException xxx) {
+                            if ("true".equalsIgnoreCase(value)) {
+                                booleanValue = true;
+                            } else if ("false".equalsIgnoreCase(value)) {
+                                booleanValue = false;
+                            } else {
+                                throw new IllegalArgumentException("No key, value cannot be converted to Level, int, double, boolean.");
+                            }
+                        }
+                    }
+                }
+            }
+        } else { // non-empty key
+            if (value.isEmpty()) {
+                switch (key) {
+                    case "int" -> intValue = Integer.MIN_VALUE;
+                    case "double" -> doubleValue = Double.NaN;
+                    case "boolean" -> booleanValue = false;
+                    case "level" -> levelValue = Level.ALL;
+                    default -> {
+                        Map<String, String> dataV = new TreeMap<>(data);
+                        dataV.put(key, value);
+                        data = dataV;
+                    }
+                }
+            } else { // both key and value present
+                if ("false".equalsIgnoreCase(value)) {
+                    switch (key) {
+                        case "int", "double", "level" -> throw new IllegalArgumentException(value + " cannot be converted to Level, int, double.");
+                        case "boolean" -> booleanValue = false;
+                        default -> {
+                            Map<String, String> dataV = new TreeMap<>(data);
+                            dataV.remove(key);
+                            data = dataV;
+                        }
+                    }
+                } else {
+                    switch (key) {
+                        case "boolean" -> {
+                            if ("true".equalsIgnoreCase(value)) {
+                                booleanValue = true;
+                            } else {
+                                throw new IllegalArgumentException(value + " cannot be converted to boolean.");
+                            }
+                        }
+                        case "int" -> {
+                            try {
+                                intValue = Integer.parseInt(value);
+                            } catch (NumberFormatException x) {
+                                throw new RuntimeException(value + " is not an integer value.");
+                            }
+                        }
+                        case "double" -> {
+                            try {
+                                doubleValue = Double.parseDouble(value);
+                            } catch (NumberFormatException x) {
+                                throw new RuntimeException(value + " is not a double value.");
+                            }
+                        }
+                        case "level" -> {
+                            try {
+                                levelValue = Level.parse(value);
+                            } catch (IllegalArgumentException x) {
+                                throw new RuntimeException(value + " is not a valid log level.");
+                            }
+                        }
+                        default -> {
+                            Map<String, String> dataV = new TreeMap<>(data);
+                            dataV.put(key, value);
+                            data = dataV;
+                        }
+                    }
+                }
+            }
+        }
+        return this;
+    }
+    
+    
+    // -- Getters : ------------------------------------------------------------
 
     /**
      * Returns the maximum logging level among those associated with the specified properties.
@@ -144,7 +284,7 @@ public class CCSProperty {
      * @return True if set.
      */
     public boolean isSet() {
-        return value != null;
+        return data != null;
     }
     
     /**
@@ -152,7 +292,7 @@ public class CCSProperty {
      * @param key Key.
      * @return Value as a String, or {@code null} if there is no such key.
      */
-    public String get(String key) {
+    public String getValue(String key) {
         return data == null ? null : data.get(key);
     }
     
@@ -207,7 +347,7 @@ public class CCSProperty {
      * @return True if {@code key} is mapped to anything other than "false" (ignore case), or is present without a key.
      */
     public boolean getBoolean(String key) {
-        return keys.contains(key);
+        return data.keySet().contains(key);
     }
     
     /**
@@ -244,15 +384,23 @@ public class CCSProperty {
             }
         }
     }
-
-    @Override
-    public String toString() {
-        return name +" = "+ value;
-    }
     
     public boolean isLogEnabled(Log log) {
         return log.isEnabled(levelValue);
     }
+
+    @Override
+    public String toString() {
+        List<String> ss = new ArrayList<>();
+        if (levelValue != Level.ALL) ss.add(levelValue.toString());
+        if (intValue != Integer.MIN_VALUE) ss.add(Integer.toString(intValue));
+        if (!Double.isNaN(doubleValue) && !(Math.round(doubleValue) == intValue)) ss.add(Double.toString(doubleValue));
+        if (booleanValue) ss.add("true");
+        data.forEach((key, value) -> ss.add(value.isEmpty() ? key : key + MAP + value));
+        return name +" = "+ String.join(SEP, ss);
+    }    
+    
+    // -- Testing : ------------------------------------------------------------
     
     static public void main(String... s) {
         CCSProperty p;
