@@ -202,6 +202,11 @@ public class SeqnoList extends FixedSizeBitSet implements SizeStreamable, Iterab
         }
 
         public void remove() { // not supported
+        // CCS begin
+            int prev_index = index-1;
+            if (prev_index < 0 || !get(prev_index)) throw new IllegalStateException("Cannot remove "+ seqno(prev_index) +" at "+ prev_index);
+            clear(prev_index);
+        // CCS end
         }
     }
 }

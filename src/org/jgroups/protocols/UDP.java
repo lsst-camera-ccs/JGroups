@@ -144,7 +144,7 @@ public class UDP extends TP {
     protected static final boolean is_android, is_mac;
 
     // CCS begin
-    private MessageGate messageGate;
+    private final MessageGate messageGate = new MessageGate(log);
     // CCS end
 
     static  {
@@ -267,10 +267,8 @@ public class UDP extends TP {
     @Override
     public void sendToAll(byte[] data, int offset, int length) throws Exception {
         // CCS begin
-        if (messageGate != null) {
-            if (!messageGate.process(length)) {
-                return;
-            }
+        if (!messageGate.process(length)) {
+            return;
         }
         // CCS end
         if(ip_mcast && mcast_addr != null) {
@@ -301,9 +299,8 @@ public class UDP extends TP {
                 // CCS begin
 //                sock.send(packet);
                 boolean checkTime = ccs_prop_timing.isLogEnabled(log);
-                boolean checkFail = ccs_prop_sendfail.isLogEnabled(log);
                 long time = checkTime ? System.currentTimeMillis() : 0L;
-                if (checkFail) {
+                if (ccs_prop_sendfail.isLogEnabled(log)) {
                     try {
                         sock.send(packet);
                     } catch (IOException | RuntimeException x) {
@@ -362,23 +359,6 @@ public class UDP extends TP {
 
     public void init() throws Exception {
         super.init();
-
-        // CCS begin
-        double loss = ccs_prop_debug_loss.getDouble();
-        if (Double.isNaN(loss) || loss <= 0. || loss >= 1.) {
-            loss = -1.;
-        }
-        if (loss > 0. || ccs_prop_throttle.isSet()) {
-            messageGate = new MessageGate(log, CCSProperty.getMaxLevel(ccs_prop_debug_loss, ccs_prop_throttle));
-            messageGate.setMessageLoss(loss);
-            if (loss > 0.) log.warn("Simulating losing "+ loss +" of multicast messages.");
-            int maxRate = ccs_prop_throttle.getInt();
-            if (maxRate > 0) {
-                messageGate.setRateLimit(maxRate);
-            }
-        }
-        // CCS end
-
         if(bundler.getMaxSize() > Global.MAX_DATAGRAM_PACKET_SIZE)
             throw new IllegalArgumentException("bundler.max_size (" + bundler.getMaxSize() + ") cannot exceed the max " +
                                                  "datagram packet size of " + Global.MAX_DATAGRAM_PACKET_SIZE);

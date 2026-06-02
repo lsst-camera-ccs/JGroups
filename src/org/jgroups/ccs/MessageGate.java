@@ -2,16 +2,15 @@ package org.jgroups.ccs;
 
 import java.util.Random;
 import java.util.concurrent.locks.LockSupport;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import org.jgroups.logging.Log;
+import org.jgroups.stack.Protocol;
 
 /**
  * Used to throttle messages before sending them over the network, or simulate message loss.
  *
  * @author onoprien
  */
-public class MessageGate {
+public final class MessageGate {
 
 // -- Fields : -----------------------------------------------------------------
     
@@ -21,38 +20,54 @@ public class MessageGate {
     
     private final Random rand = new Random();
     private final Log log;
-    private final Level lev;
     
+    private volatile boolean lossy = false; // true if some messages should be lost, also used to ensure that updates are visible
     private double loss = -1.; // fraction of discarded messages [0,1]
     
+    private boolean rateLimited = false;
     private double maxRate; // Bytes/ns
     
     private long prevDelay, prevTime;
     
-    private long accSize = 0;
-    private long accTime = System.nanoTime();
+    private long accSize;
+    private long accTime;
+    
+    private final CCSProperty.Listener updater = p -> changed(); // listen to properties changes
 
 // -- Life cycle : -------------------------------------------------------------
     
     public MessageGate(Log logger) {
-        this(logger, Level.FINE);
-    }
-    
-    public MessageGate(Log logger, Level level) {
         log = logger;
-        lev = level == null ? Level.ALL : level;
+        changed();
+        Protocol.ccs_prop_debug_loss.addListener(updater);
+        Protocol.ccs_prop_throttle.addListener(updater);
+    }
+
+    public void changed() {
+        int maxRateMB = Protocol.ccs_prop_throttle.getInt();
+        double lossRate = Protocol.ccs_prop_debug_loss.getDouble();
+        synchronized (this) {
+            if (maxRateMB > 0) {
+                maxRate = maxRateMB / 1e3; // MB/s --> B/ns
+                accSize = 0;
+                accTime = System.nanoTime();
+                prevDelay = 0;
+                prevTime = 0;
+                rateLimited = true;
+            } else {
+                maxRate = 0.;
+                rateLimited = false;
+            }
+            if (Double.isNaN(lossRate) || lossRate <= 0. || lossRate >= 1.) {
+                lossRate = -1.;
+            }
+            this.loss = lossRate;
+            lossy = lossRate > 0.;
+        }
+        if (lossy) log.warn("Simulating losing "+ loss +" of multicast messages.");
+        if (rateLimited) log.info("Throttling outgoing messages at "+ maxRateMB +" MB/s.");
     }
     
-    
-// -- Setters and getters : ----------------------------------------------------
-    
-    public synchronized void setMessageLoss(double fraction) {
-        loss = fraction;
-    }
-    
-    public synchronized void setRateLimit(int rateMB) {
-        maxRate = rateMB / 1e3; // MB/s --> B/ns
-    }
     
 // -----------------------------------------------------------------------------
     
@@ -60,17 +75,22 @@ public class MessageGate {
         
         // Simulate message loss:
         
-        boolean lost = loss > 0. && loss > rand.nextDouble();
-        if (lost) {
-            log.out(lev, "Losing a message of size "+ size +" bytes");
-            return false;
-        } else {
-            log.trace("Publishing a message of size "+ size +" bytes");
+        if (lossy) {
+            boolean lost = loss > rand.nextDouble();
+            if (lost) {
+                log.out(Protocol.ccs_prop_debug_loss.getLevel(), "Losing a message of size " + size + " bytes");
+                return false;
+            } else {
+                log.trace("Publishing a message of size " + size + " bytes");
+            }
         }
         
         // Limit rate:
         
-        limitRate(size);
+        if (rateLimited) {
+            limitRate(size);
+        }
+        
         return true;
     }
     
@@ -89,7 +109,7 @@ public class MessageGate {
                 if (delay > prevDelay * VETO_FACTOR || now > prevTime + VETO_TIME) {
                     prevDelay = delay;
                     prevTime = now;
-                    log.out(lev, "Throttle : message of size "+ size +" bytes is held for "+ (delay / 1000000) +" ms.");
+                    log.out(Protocol.ccs_prop_throttle.getLevel(), "Throttle : message of size "+ size +" bytes is held for "+ (delay / 1000000) +" ms.");
                 }
                 LockSupport.parkNanos(delay);
                 now = System.nanoTime();

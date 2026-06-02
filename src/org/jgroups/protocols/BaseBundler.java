@@ -133,7 +133,7 @@ public abstract class BaseBundler implements Bundler {
         StringBuilder sb = null;
         if (ccs) {
             hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
-            ccs = hdr != null && 
+            ccs = hdr != null && hdr.getType() != NakAckHeader2.HIGHEST_SEQNO &&
                  (hdr.getType() == NakAckHeader2.XMIT_RSP || hdr.getType() == NakAckHeader2.XMIT_REQ || msg.isFlagSet(Message.TransientFlag.DONT_BLOCK));
             if (ccs) {
                 level = Protocol.ccs_prop_retransmit.getLevel();

@@ -11,9 +11,9 @@ import org.jgroups.stack.IpAddress;
  * @author onoprien
  */
 public class CCSUtil {
+    
     static public boolean isValid(PhysicalAddress address) {
-        if (address instanceof IpAddress) {
-            IpAddress a = (IpAddress) address;
+        if (address instanceof IpAddress a) {
             return a.getIpAddress() != null && a.getPort() > 0;
         } else {
             return false;
@@ -27,4 +27,4 @@ public class CCSUtil {
         return null;
     }
     
-} // CCS end
+}

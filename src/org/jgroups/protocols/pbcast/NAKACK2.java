@@ -23,13 +23,11 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
-import java.util.logging.Level;
 
 import static org.jgroups.Message.Flag.NO_FC;
 import static org.jgroups.Message.Flag.OOB;
 import static org.jgroups.Message.TransientFlag.*;
 import org.jgroups.ccs.CCSLog;
-import org.jgroups.ccs.CCSUtil;
 
 
 /**
@@ -988,30 +986,29 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
             if (original_sender.equals(local_addr)) {
                 if (ccs_prop_retransmit.getBoolean("suppress") && use_mcast_xmit) { // suppress retransmission of messages that were retransmitted less that xmit_interval/2 ago
                     int n = missing_msgs.size();
-                    String[] pass = new String[n];
-                    int passIndex = 0;
-                    String[] suppress = new String[n];
-                    int suppressIndex = 0;
+                    ArrayList<String> pass = new ArrayList<>(n);
+                    ArrayList<String> suppress = new ArrayList<>(n);
                     int i = 0;
                     long now = System.currentTimeMillis();
-                    while ((i = missing_msgs.nextSetBit(i)) != -1) {
-                        long sn = missing_msgs.seqno(i);
+                    Iterator<Long> it = missing_msgs.iterator();
+                    while (it.hasNext()) {
+                        long sn = it.next();
                         long t = xmit_prev.merge(sn, now, (old, cur) -> (cur-old)>(xmit_interval/2) ? cur : old-1);
                         if (t == now) {
-                            pass[passIndex++] = Long.toString(sn);
+                            pass.add(Long.toString(sn));
                         } else {
-                            suppress[suppressIndex++] = Long.toString(sn);
-                            missing_msgs.clear(i);
+                            suppress.add(Long.toString(sn));
+                            it.remove();
                         }
                     }
-                    if (suppressIndex == 0) {
-                        log.out(ccs_prop_retransmit.getLevel(), "NAKACK2: retransmit request from "+ CCSLog.toString(xmit_requester) +" for "+ missing_msgs);
-                    } else if (passIndex == 0) {
-                        log.out(ccs_prop_retransmit.getLevel(), "NAKACK2: suppressed retransmit request from "+ CCSLog.toString(xmit_requester) +" for "+ missing_msgs);
+                    if (suppress.isEmpty()) {
+                        log.out(ccs_prop_retransmit.getLevel(), "NAKACK2: fulfill retransmit request from "+ CCSLog.toString(xmit_requester) +" for "+ missing_msgs);
+                    } else if (pass.isEmpty()) {
+                        log.out(ccs_prop_retransmit.getLevel(), "NAKACK2: suppressed retransmit request from "+ CCSLog.toString(xmit_requester) +" for {"+ String.join(", ", suppress) +"}");
                         return;
                     } else {
-                        log.out(ccs_prop_retransmit.getLevel(), "NAKACK2: retransmit request from "+ CCSLog.toString(xmit_requester) +" for "+ missing_msgs +
-                                ", suppress {"+ String.join(", ", suppress) +"}, retransmit "+ missing_msgs);
+                        log.out(ccs_prop_retransmit.getLevel(), "NAKACK2: retransmit request from "+ CCSLog.toString(xmit_requester) +
+                                ", suppress {"+ String.join(", ", suppress) +"}, retransmit {"+ String.join(", ", pass) +"}");
                     }
                 } else {
                     log.out(ccs_prop_retransmit.getLevel(), "NAKACK2: retransmit request from "+ CCSLog.toString(xmit_requester) +" FOR "+ missing_msgs);
