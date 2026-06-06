@@ -117,6 +117,12 @@ public abstract class Protocol implements Lifecycle {
      * Example: system.property.ccs.jg.sendfail=INFO
      */
     static public final CCSProperty ccs_prop_sendfail = CCSProperty.make("ccs.jg.sendfail");
+
+    /**
+     * General debugging.
+     * "bundler-send" - log sending any messages by BaseBundler
+     */
+    static public final CCSProperty ccs_prop_debug = CCSProperty.make("ccs.jg.debug");
     // CCS end
 
     protected List<Policy>         policies;

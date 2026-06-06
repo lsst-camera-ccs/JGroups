@@ -99,6 +99,32 @@ public interface Log {
             default -> throw new IllegalArgumentException("Unknown level "+ level);
         }
     }
+    
+    default Level getJULLevel() {
+        return switch (getLevel()) {
+            case "fatal", "OFF" -> Level.OFF;
+            case "error", "SEVERE" -> Level.SEVERE;
+            case "warn", "WARNING" -> Level.WARNING;
+            case "info", "INFO" -> Level.INFO;
+            case "debug", "FINE" -> Level.FINE;
+            case "CONFIG" -> Level.CONFIG;
+            case "trace", "FINER" -> Level.FINER;
+            case "FINEST" -> Level.FINEST;
+            default -> Level.INFO;
+        };
+    }
+    
+    default void out(String msg) {
+        out(getJULLevel(), msg);
+    }
+    
+    default void out(String format, Object ... args) {
+        out(getJULLevel(), format, args);
+    }
+    
+    default void out(String msg, Throwable throwable) {
+        out(getJULLevel(), msg, throwable);
+    }
     // CCS end
 
 

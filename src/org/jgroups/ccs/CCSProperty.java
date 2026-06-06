@@ -179,12 +179,9 @@ public class CCSProperty {
     
     public final CCSProperty modify(String key, String value) {
         synchronized (this) {
-            if (key == null || key.isBlank()) {
-                key = "";
-            }
-            if (value == null || value.isBlank()) {
-                value = "";
-            }
+            if (key == null || key.isBlank()) key = "";
+            if (value == null || value.isBlank()) value = "";
+            if (data == null) data = new TreeMap<>();
             if (key.isEmpty()) { // unnamed value
                 if (value.isEmpty()) {
                     throw new IllegalArgumentException("No key, no value.");

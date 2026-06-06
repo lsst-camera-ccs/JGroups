@@ -127,14 +127,15 @@ public abstract class BaseBundler implements Bundler {
 
     protected void sendSingleMessage(final Message msg) {
         // CCS begin
-        boolean ccs = Protocol.ccs_prop_retransmit.isLogEnabled(log);
-        NakAckHeader2 hdr = null;
         Level level = null;
         StringBuilder sb = null;
+        boolean ccs = Protocol.ccs_prop_retransmit.isLogEnabled(log);
         if (ccs) {
-            hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
-            ccs = hdr != null && hdr.getType() != NakAckHeader2.HIGHEST_SEQNO &&
-                 (hdr.getType() == NakAckHeader2.XMIT_RSP || hdr.getType() == NakAckHeader2.XMIT_REQ || msg.isFlagSet(Message.TransientFlag.DONT_BLOCK));
+            NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
+            ccs = hdr != null &&
+                 (    hdr.getType() == NakAckHeader2.XMIT_RSP || 
+                      hdr.getType() == NakAckHeader2.XMIT_REQ || 
+                      (hdr.getType() == NakAckHeader2.MSG && msg.isFlagSet(Message.TransientFlag.DONT_BLOCK))    );
             if (ccs) {
                 level = Protocol.ccs_prop_retransmit.getLevel();
                 sb = new StringBuilder();
@@ -148,16 +149,16 @@ public abstract class BaseBundler implements Bundler {
                 } else {
                     sb.append("{").append(hdr.getSeqno()).append("}");
                 }
-                sb.append(". Message: ").append(msg);
+                sb.append(".");
             }
         }
-        long time1 = ccs ? System.currentTimeMillis() : 0;
+        long time1 = System.currentTimeMillis();
         // CCS end
         Address dest=msg.getDest();
         try {
             Util.writeMessage(msg, output, dest == null);
             // CCS begin
-            long time2 = ccs ? System.currentTimeMillis() : 0;
+            long time2 = System.currentTimeMillis();
             // CCS end
             transport.doSend(output.buffer(), 0, output.position(), dest);
             // CCS begin
@@ -167,11 +168,17 @@ public abstract class BaseBundler implements Bundler {
             }
             // CCS end
             transport.getMessageStats().incrNumSingleMsgsSent();
+            if (Protocol.ccs_prop_debug.getBoolean("bundler-send")) {
+                log.out("BaseBundler: sent {"+ CCSLog.getSeqNo(msg) +"}. Timing: "+ (time2-time1) +" + "+ (System.currentTimeMillis() - time2) +" ms.");
+            }
         }
         catch(Throwable e) {
             // CCS begin
             if (ccs) {
                 log.out(level, sb.append(" FAILED.").toString(), e);
+            }
+            if (Protocol.ccs_prop_debug.getBoolean("bundler-send")) {
+                log.out("BaseBundler: failure {"+ CCSLog.getSeqNo(msg) +"}.");
             }
             // CCS end
             log.trace(Util.getMessage("SendFailure"),
@@ -183,7 +190,7 @@ public abstract class BaseBundler implements Bundler {
         // CCS begin
         boolean ccs = Protocol.ccs_prop_retransmit.isLogEnabled(log);
         Level level = null;
-        long time1 = 0;
+        long time1 = System.currentTimeMillis();
         List<String> requests = new LinkedList<>();
         List<String> responses = new LinkedList<>();
         StringBuilder sb = null;
@@ -201,24 +208,22 @@ public abstract class BaseBundler implements Bundler {
             }
             ccs = !(requests.isEmpty() && responses.isEmpty());
             if (ccs) {
-                time1 = System.currentTimeMillis();
                 level = Protocol.ccs_prop_retransmit.getLevel();
                 sb = new StringBuilder();
-                sb.append("BaseBundler: sending retransmit bundle. ");
+                sb.append("BaseBundler: sending bundle. ");
                 if (!requests.isEmpty()) {
-                    sb.append("Requests: ").append(String.join(", ", requests)).append(". ");
+                    sb.append("Requests: {").append(String.join(", ", requests)).append("}. Destination: ").append(CCSLog.toString(dest));
                 }
                 if (!responses.isEmpty()) {
-                    sb.append("Responses: ").append(String.join(", ", responses)).append(". ");
+                    sb.append("Responses: {").append(String.join(", ", responses)).append("}");
                 }
-                sb.append(" Destination: ").append(CCSLog.toString(dest));
             }
         }
         // CCS end
         try {
             Util.writeMessageList(dest, src, transport.cluster_name.chars(), list, output, dest == null);
             // CCS begin
-            long time2 = ccs ? System.currentTimeMillis() : 0;
+            long time2 = System.currentTimeMillis();
             // CCS end
             transport.doSend(output.buffer(), 0, output.position(), dest);
             // CCS begin
@@ -226,13 +231,19 @@ public abstract class BaseBundler implements Bundler {
                 sb.append(" Timing: ").append(time2-time1).append(" + ").append(System.currentTimeMillis() - time2).append(" ms.");
                 log.out(level, sb.toString());
             }
+            if (Protocol.ccs_prop_debug.getBoolean("bundler-send")) {
+                log.out("BaseBundler: bundle {"+ String.join(System.lineSeparator(), list.stream().map(m -> CCSLog.getSeqNo(m)).toList()) +"} Timing: "+ (time2-time1) +" + "+ (System.currentTimeMillis() - time2) +" ms.");
+            }
             // CCS end
             transport.getMessageStats().incrNumBatchesSent();
         }
         catch(Throwable e) {
             // CCS begin
             if (ccs) {
-                log.out(Protocol.ccs_prop_retransmit.getLevel(), sb.append(" FAILED.").toString(), e);
+                log.out(Protocol.ccs_prop_retransmit.getLevel(), sb.append(". FAILED.").toString(), e);
+            }
+            if (Protocol.ccs_prop_debug.getBoolean("bundler-send")) {
+                log.out("BaseBundler: bundle failure {"+ String.join(System.lineSeparator(), list.stream().map(m -> CCSLog.getSeqNo(m)).toList()) +"}", e);
             }
             // CCS end
             log.trace(Util.getMessage("FailureSendingMsgBundle"), transport.getAddress(), e);

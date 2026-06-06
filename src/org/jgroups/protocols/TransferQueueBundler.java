@@ -114,8 +114,9 @@ public class TransferQueueBundler extends BaseBundler implements Runnable {
                 num_drops_on_full_queue++;
                 if (Protocol.ccs_prop_retransmit.isLogEnabled(log)) {
                     NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
-                    if (hdr != null && hdr.getType() == NakAckHeader2.XMIT_RSP) {
-                        log.out(Protocol.ccs_prop_retransmit.getLevel(), "TransferQueueBundler: dropped message. Type: "+ NakAckHeader2.type2Str(hdr.getType()) +" {" + hdr.getSeqno() + "}. DONT_BLOCK: "+ msg.isFlagSet(Message.TransientFlag.DONT_BLOCK) +". Message: " + msg);
+                    if (hdr != null && msg.getDest() == null &&
+                            (hdr.getType() == NakAckHeader2.XMIT_RSP || (hdr.getType() == NakAckHeader2.MSG && msg.isFlagSet(Message.TransientFlag.DONT_BLOCK)))) {
+                        log.out(Protocol.ccs_prop_retransmit.getLevel(), "TransferQueueBundler: dropped "+ NakAckHeader2.type2Str(hdr.getType()) +" {" + hdr.getSeqno() + "}.");
                     }
                 }
             }

@@ -3,11 +3,14 @@ package org.jgroups.ccs;
 import java.util.ArrayList;
 import org.jgroups.Address;
 import org.jgroups.JChannel;
+import org.jgroups.Message;
 import org.jgroups.PhysicalAddress;
 import org.jgroups.logging.Log;
 import org.jgroups.logging.LogFactory;
+import org.jgroups.protocols.pbcast.NakAckHeader2;
 import org.jgroups.stack.Protocol;
 import org.jgroups.util.NameCache;
+import org.jgroups.util.SeqnoList;
 import org.jgroups.util.UUID;
 
 /**
@@ -295,6 +298,20 @@ public class CCSLog implements Log {
             sb.append(" uuid=").append(((UUID) address).toStringLong());
         }
         return sb.toString();
+    }
+    
+    static public String getSeqNo(Message msg) {
+        NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
+        if (hdr == null) {
+            return "None";
+        } else {
+            return switch (hdr.getType()) {
+                case NakAckHeader2.HIGHEST_SEQNO -> "HS "+ hdr.getSeqno();
+                case NakAckHeader2.MSG, NakAckHeader2.XMIT_RSP -> Long.toString(hdr.getSeqno());
+                case NakAckHeader2.XMIT_REQ -> "REQ "+ ((SeqnoList)(msg.getObject()));
+                default -> throw new RuntimeException("Unknown NAKACK2 header type: ");
+            };
+        }
     }
 
 }
