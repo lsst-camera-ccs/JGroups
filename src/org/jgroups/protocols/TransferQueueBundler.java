@@ -10,7 +10,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import org.jgroups.Event;
 import org.jgroups.ccs.CCSUtil;
+import org.jgroups.ccs.SentRetransmission;
 
 import static org.jgroups.conf.AttributeType.SCALAR;
 import org.jgroups.protocols.pbcast.NakAckHeader2;
@@ -112,11 +114,13 @@ public class TransferQueueBundler extends BaseBundler implements Runnable {
 //                num_drops_on_full_queue++;
             if(!queue.offer(msg)) {
                 num_drops_on_full_queue++;
-                if (Protocol.ccs_prop_retransmit.isLogEnabled(log)) {
-                    NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
-                    if (hdr != null && msg.getDest() == null &&
-                            (hdr.getType() == NakAckHeader2.XMIT_RSP || (hdr.getType() == NakAckHeader2.MSG && msg.isFlagSet(Message.TransientFlag.DONT_BLOCK)))) {
-                        log.out(Protocol.ccs_prop_retransmit.getLevel(), "TransferQueueBundler: dropped "+ NakAckHeader2.type2Str(hdr.getType()) +" {" + hdr.getSeqno() + "}.");
+                NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
+                if (hdr != null && msg.getDest() == null
+                        && (hdr.getType() == NakAckHeader2.XMIT_RSP || (hdr.getType() == NakAckHeader2.MSG && msg.isFlagSet(Message.TransientFlag.DONT_BLOCK)))) {
+                    long seqno = hdr.getSeqno();
+                    log.out(Protocol.ccs_prop_retransmit.getLevel(), "TransferQueueBundler: dropped " + NakAckHeader2.type2Str(hdr.getType()) + " {" + seqno + "}.");
+                    if (suppressRetrans) {
+                        this.transport.up(new Event(Event.USER_DEFINED, new SentRetransmission(seqno, false)));
                     }
                 }
             }

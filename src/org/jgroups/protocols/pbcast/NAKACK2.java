@@ -28,6 +28,8 @@ import static org.jgroups.Message.Flag.NO_FC;
 import static org.jgroups.Message.Flag.OOB;
 import static org.jgroups.Message.TransientFlag.*;
 import org.jgroups.ccs.CCSLog;
+import org.jgroups.ccs.CCSProperty;
+import org.jgroups.ccs.SentRetransmission;
 
 
 /**
@@ -258,6 +260,7 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
     
     // CCS begin
     private final Map<Long,Long> xmit_prev = new ConcurrentHashMap<>(); // seqno -> millis time of last retransmission
+    private volatile int suppressRetrans; // -1 - no retransmit suppression, 0 - old, >0 - millis to wait if no send
     // CCS end
 
     public long    getXmitRequestsReceived()               {return xmit_reqs_received.sum();}
@@ -471,6 +474,20 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
     }
 
     public void init() throws Exception {
+        
+        // CCS begin
+        CCSProperty.Listener s = p -> {
+            if (Protocol.ccs_prop_retransmit.getBoolean("suppress")) {
+                int v = Protocol.ccs_prop_retransmit.getInt();
+                suppressRetrans = v > 0 ? v : 0;
+            } else {
+                suppressRetrans = -1;
+            }
+        };
+        Protocol.ccs_prop_retransmit.addListener(s);
+        s.changed(Protocol.ccs_prop_retransmit);
+        // CCS end
+        
         if(xmit_from_random_member && discard_delivered_msgs) {
             discard_delivered_msgs=false;
             log.debug("%s: xmit_from_random_member set to true: changed discard_delivered_msgs to false", local_addr);
@@ -660,6 +677,20 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
                 if(rebroadcasting)
                     cancelRebroadcasting();
                 break;
+            // CCS begin
+            case Event.USER_DEFINED:
+                if (suppressRetrans > 0 && evt.getArg() instanceof SentRetransmission r) {
+                    if (r.isSuccess()) {
+                        r.getSeqnos().forEach(sn -> xmit_prev.put(sn, System.currentTimeMillis() + xmit_interval/2));
+                    } else {
+                        r.getSeqnos().forEach(sn -> xmit_prev.remove(sn));
+                    }
+                    if (Protocol.ccs_prop_debug.getBoolean("suppress")) {
+                        log.out("NAKACK2: event " + r +" "+ r.isSuccess());
+                    }
+                }
+                break;
+            // CCS end
         }
         return up_prot.up(evt);
     }
@@ -984,17 +1015,16 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
         // CCS begin
         if (ccs_prop_retransmit.isSet()) {
             if (original_sender.equals(local_addr)) {
-                if (ccs_prop_retransmit.getBoolean("suppress") && use_mcast_xmit) { // suppress retransmission of messages that were retransmitted less that xmit_interval/2 ago
+                if (suppressRetrans > -1 && use_mcast_xmit) { // suppress retransmission of messages that were retransmitted less that xmit_interval/2 ago
                     int n = missing_msgs.size();
                     ArrayList<String> pass = new ArrayList<>(n);
                     ArrayList<String> suppress = new ArrayList<>(n);
-                    int i = 0;
-                    long now = System.currentTimeMillis();
+                    long wakeUp = System.currentTimeMillis() + xmit_interval/2 + suppressRetrans;
                     Iterator<Long> it = missing_msgs.iterator();
                     while (it.hasNext()) {
                         long sn = it.next();
-                        long t = xmit_prev.merge(sn, now, (old, cur) -> (cur-old)>(xmit_interval/2) ? cur : old-1);
-                        if (t == now) {
+                        long t = xmit_prev.merge(sn, wakeUp, (old, cur) -> (cur - xmit_interval/2 - suppressRetrans) > old ? cur : old-1);
+                        if (t == wakeUp) {
                             pass.add(Long.toString(sn));
                         } else {
                             suppress.add(Long.toString(sn));
@@ -1622,10 +1652,10 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
         
         // CCS begin
         if (ccs_prop_retransmit.getBoolean("suppress")) {
-            long deadline = System.currentTimeMillis() - xmit_interval / 2;
+            long now = System.currentTimeMillis();
             Iterator<Map.Entry<Long, Long>> it = xmit_prev.entrySet().iterator();
             while (it.hasNext()) {
-                if (it.next().getValue() < deadline) {
+                if (it.next().getValue() < now) {
                     it.remove();
                 }
             }
