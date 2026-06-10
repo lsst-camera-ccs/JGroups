@@ -219,9 +219,13 @@ public class CCSProperty {
                         case "level" ->
                             levelValue = Level.ALL;
                         default -> {
-                            Map<String, String> dataV = new TreeMap<>(data);
-                            dataV.put(key, value);
-                            data = dataV;
+                            try {
+                                modify("", key); // try using key as value
+                            } catch (IllegalArgumentException x) {
+                                Map<String, String> dataV = new TreeMap<>(data);
+                                dataV.put(key, value);
+                                data = dataV;
+                            }
                         }
                     }
                 } else { // both key and value present

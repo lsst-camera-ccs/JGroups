@@ -3,7 +3,9 @@ package org.jgroups.ccs;
 import org.jgroups.Header;
 import org.jgroups.Message;
 import org.jgroups.PhysicalAddress;
+import org.jgroups.protocols.pbcast.NakAckHeader2;
 import org.jgroups.stack.IpAddress;
+import org.jgroups.stack.Protocol;
 
 /**
  * Miscellaneous CCS-specific static utility methods.
@@ -25,6 +27,22 @@ public class CCSUtil {
             if (clazz.isInstance(h)) return (T) h;
         }
         return null;
+    }
+    
+    static public boolean isRetransmission(Message msg) {
+        NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
+        return (hdr != null && msg.getDest() == null
+                && (hdr.getType() == NakAckHeader2.XMIT_RSP || (hdr.getType() == NakAckHeader2.MSG && msg.isFlagSet(Message.TransientFlag.DONT_BLOCK))));
+    }
+    
+    static public long getRetransmissionSeqNo(Message msg) {
+        NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
+        if (hdr != null && msg.getDest() == null
+                && (hdr.getType() == NakAckHeader2.XMIT_RSP || (hdr.getType() == NakAckHeader2.MSG && msg.isFlagSet(Message.TransientFlag.DONT_BLOCK)))) {
+            return hdr.getSeqno();
+        } else {
+            return -1L;
+        }
     }
     
 }

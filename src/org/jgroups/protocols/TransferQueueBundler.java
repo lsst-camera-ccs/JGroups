@@ -7,9 +7,13 @@ import org.jgroups.util.AverageMinMax;
 import org.jgroups.util.Util;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
+import org.jgroups.Address;
 import org.jgroups.ccs.CCSUtil;
 
 import static org.jgroups.conf.AttributeType.SCALAR;
@@ -42,6 +46,12 @@ public class TransferQueueBundler extends BaseBundler implements Runnable {
     @ManagedAttribute(description="Average fill size of the queue (in bytes)")
     protected final AverageMinMax    avg_fill_count=new AverageMinMax(); // avg number of bytes when a batch is sent
     protected static final String    THREAD_NAME="TQ-Bundler";
+    
+    // CCS begin
+    private final ConcurrentHashMap<Long,Long> retransmissionsInQueue = new ConcurrentHashMap<>();  // seqno -> queuing time
+    private volatile long lastClean; // last time retransmissionsInQueue was purged of old entries
+    static private final long MAX_RETRANSMISSION_HOLD = 10000L; // this makes entry old (ms)
+    // CCS end
 
     public TransferQueueBundler() {
     }
@@ -103,6 +113,32 @@ public class TransferQueueBundler extends BaseBundler implements Runnable {
         return super.size() + removeQueueSize() + getQueueSize();
     }
 
+    // CCS begin
+    @Override
+    protected void sendSingleMessage(Message msg) {
+        if (Protocol.ccs_prop_retransmit.getBoolean("bundler")) {
+            long seqno = CCSUtil.getRetransmissionSeqNo(msg);
+            if (seqno > -1) {
+                retransmissionsInQueue.remove(seqno);
+            }
+        }
+        super.sendSingleMessage(msg);
+    }
+
+    @Override
+    protected void sendMessageList(Address dest, Address src, List<Message> list) {
+        if (Protocol.ccs_prop_retransmit.getBoolean("bundler")) {
+            for (Message msg : list) {
+                long seqno = CCSUtil.getRetransmissionSeqNo(msg);
+                if (seqno > -1) {
+                    retransmissionsInQueue.remove(seqno);
+                }
+            }
+        }
+        super.sendMessageList(dest, src, list);
+    }
+    // CCS end    
+    
     public void send(Message msg) throws Exception {
         if(!running)
             return;
@@ -110,7 +146,35 @@ public class TransferQueueBundler extends BaseBundler implements Runnable {
             // CCS begin
 //            if(!queue.offer(msg))
 //                num_drops_on_full_queue++;
-            if(!queue.offer(msg)) {
+            boolean filter = Protocol.ccs_prop_retransmit.getBoolean("bundler");
+            long seqno = -1;
+            long now = -1;
+            if (filter) {
+                now = System.currentTimeMillis();
+                long old = now - MAX_RETRANSMISSION_HOLD;
+                if (lastClean < old) { // remove old entries
+                    lastClean = now;
+                    Iterator<Map.Entry<Long,Long>> it = retransmissionsInQueue.entrySet().iterator();
+                    while (it.hasNext()) {
+                        Map.Entry<Long,Long> e = it.next();
+                        if (e.getValue() < old) it.remove();
+                    }
+                }
+                NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
+                if (hdr != null && msg.getDest() == null
+                        && (hdr.getType() == NakAckHeader2.XMIT_RSP || (hdr.getType() == NakAckHeader2.MSG && msg.isFlagSet(Message.TransientFlag.DONT_BLOCK)))) {
+                    seqno = hdr.getSeqno();
+                    Long prev = retransmissionsInQueue.get(seqno);
+                    if (prev != null && now - prev <= MAX_RETRANSMISSION_HOLD) {
+                        return; // dropping retransmission
+                    }
+                }
+            }
+            if (queue.offer(msg)) {
+                if (seqno > -1) { // retransmission goes into bundle queue - add it to retransmissionsInQueue
+                    retransmissionsInQueue.put(seqno, now);
+                }
+            } else {
                 num_drops_on_full_queue++;
                 if (Protocol.ccs_prop_retransmit.isLogEnabled(log)) {
                     NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
