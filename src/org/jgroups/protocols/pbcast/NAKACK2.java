@@ -981,7 +981,7 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
         if(is_trace)
             log.trace("%s <-- %s: XMIT(%s%s)", local_addr, xmit_requester, original_sender, missing_msgs);
         
-        // CCS begin
+        // CCS begin : log and suppress receiving retransmit requests
         if (ccs_prop_retransmit.isSet()) {
             if (original_sender.equals(local_addr)) {
                 if (ccs_prop_retransmit.getBoolean("suppress") && use_mcast_xmit) { // suppress retransmission of messages that were retransmitted less that xmit_interval/2 ago

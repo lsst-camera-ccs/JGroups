@@ -184,6 +184,50 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
     @Property(description="The type of bundler used (\"ring-buffer\", \"transfer-queue\" (default), \"sender-sends\" or " +
       "\"no-bundler\") or the fully qualified classname of a Bundler implementation")
     protected String bundler_type="transfer-queue";
+    
+    // CCS begin
+    private final ConcurrentHashMap<Address,ConcurrentHashMap<Long,Long>> requestedRetransmissions = new ConcurrentHashMap<>();
+    private volatile long requestedRetransmissionsLastClean;
+    private final long requestedRetransmissionsLife = 60000;
+    private boolean isRetransmission(Message msg) {
+        NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
+        if (hdr != null && msg.getSrc() != null) {
+            long seqno = hdr.getSeqno();
+            if (seqno > -1) {
+                ConcurrentHashMap<Long,Long> seqno2time = requestedRetransmissions.get(msg.getSrc());
+                if (seqno2time != null) {
+                    Long time = seqno2time.get(seqno);
+                    if (time != null && System.currentTimeMillis() - time < requestedRetransmissionsLife) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+    void addRequest(Address sender, long seqno) {
+        long now = System.currentTimeMillis();
+        ConcurrentHashMap<Long,Long> seqno2time = requestedRetransmissions.computeIfAbsent(sender, a -> new ConcurrentHashMap<Long,Long>());
+        seqno2time.put(seqno, now);
+        long dead = now - requestedRetransmissionsLife;
+        if (dead > requestedRetransmissionsLastClean) { // clean old entries
+            Iterator<ConcurrentHashMap<Long,Long>> it = requestedRetransmissions.values().iterator();
+            while (it.hasNext()) {
+                ConcurrentHashMap<Long,Long> ss = it.next();
+                Iterator<Long> itt = ss.values().iterator();
+                while (itt.hasNext()) {
+                    if (itt.next() < dead) {
+                        itt.remove();
+                    }
+                }
+                if (ss.isEmpty()) {
+                    it.remove();
+                }
+            }
+            requestedRetransmissionsLastClean = now;
+        }
+    }
+    // CCS end
 
     @ManagedAttribute(description="Fully qualified classname of bundler")
     public String getBundlerClass() {
@@ -1234,6 +1278,20 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
                 return;
             }
         }
+        // CCS begin
+        if (Protocol.ccs_prop_tp_receive.isSet() && local_addr != null && !local_addr.equals(msg.getSrc())) {
+            NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
+            if (hdr != null) {
+                byte type = hdr.getType();
+                if (type == NakAckHeader2.MSG && isRetransmission(msg)) {
+                    type = NakAckHeader2.XMIT_RSP;
+                }
+                String sSeqNo = type == NakAckHeader2.XMIT_REQ ? Objects.toString(msg.getObject()) : Long.toString(hdr.getSeqno());
+                String sType = NakAckHeader2.type2Str(type);
+                log.out(Protocol.ccs_prop_tp_receive.getLevel(sType), "TP: received " + sType + " {" + sSeqNo + "} from " + CCSLog.toString(msg.getSrc()));
+            }
+        }
+        // CCS end
         up_prot.up(msg);
     }
 
@@ -1270,8 +1328,38 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
                 }
             }
         }
-        if(!batch.isEmpty())
+        // CCS begin
+//        if(!batch.isEmpty())
+//            up_prot.up(batch);
+        if(!batch.isEmpty()) {
+            if (Protocol.ccs_prop_retransmit.isLogEnabled(log) && local_addr != null && !local_addr.equals(batch.sender())) {
+                Object[] mmByType = new Object[5];
+                for (Message msg : batch) {
+                    NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
+                    if (hdr != null) {
+                        int type = hdr.getType();
+                        if (type == NakAckHeader2.MSG && isRetransmission(msg)) {
+                            type = NakAckHeader2.XMIT_RSP;
+                        } 
+                        ArrayList<String> mm = (ArrayList<String>) mmByType[type];
+                        if (mm == null) {
+                            mm = new ArrayList<>();
+                            mmByType[type] = mm;
+                        }
+                        mm.add(type == NakAckHeader2.XMIT_REQ ? Objects.toString(msg.getObject()) : Long.toString(hdr.getSeqno()));
+                    }
+                }
+                for (byte type = 1; type<5; type++) {
+                     ArrayList<String> mm = (ArrayList<String>) mmByType[type];
+                     if (mm != null) {
+                         String sType = NakAckHeader2.type2Str(type);
+                         log.out(Protocol.ccs_prop_tp_receive.getLevel(sType), "TP: received "+ sType +" {" + String.join(", ", mm) + "} from " + CCSLog.toString(batch.sender()));
+                     }
+                }
+            }
             up_prot.up(batch);
+        }
+        // CCS end
     }
 
     protected boolean sameCluster(String req) {

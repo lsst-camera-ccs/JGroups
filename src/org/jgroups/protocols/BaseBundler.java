@@ -166,11 +166,11 @@ public abstract class BaseBundler implements Bundler {
                 sb.append(" Timing: ").append(time2-time1).append(" + ").append(System.currentTimeMillis() - time2).append(" ms.");
                 log.out(level, sb.toString());
             }
-            // CCS end
-            transport.getMessageStats().incrNumSingleMsgsSent();
             if (Protocol.ccs_prop_debug.getBoolean("bundler-send")) {
                 log.out("BaseBundler: sent {"+ CCSLog.getSeqNo(msg) +"}. Timing: "+ (time2-time1) +" + "+ (System.currentTimeMillis() - time2) +" ms.");
             }
+            // CCS end
+            transport.getMessageStats().incrNumSingleMsgsSent();
         }
         catch(Throwable e) {
             // CCS begin

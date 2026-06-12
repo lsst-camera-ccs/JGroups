@@ -295,7 +295,7 @@ public class CCSLog implements Log {
             if (name != null) {
                 sb.append(" ").append(name);
             }
-            sb.append(" uuid=").append(((UUID) address).toStringLong());
+//            sb.append(" uuid=").append(((UUID) address).toStringLong());
         }
         return sb.toString();
     }

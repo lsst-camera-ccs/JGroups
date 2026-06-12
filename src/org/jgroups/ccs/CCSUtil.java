@@ -23,6 +23,7 @@ public class CCSUtil {
     }
     
     static public <T extends Header> T getHeader(Message msg, Class<T> clazz) {
+        if (msg == null) return null;
         for (Header h : msg.getHeaders().values()) {
             if (clazz.isInstance(h)) return (T) h;
         }
@@ -36,6 +37,7 @@ public class CCSUtil {
     }
     
     static public long getRetransmissionSeqNo(Message msg) {
+        if (msg == null) return -1;
         NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
         if (hdr != null && msg.getDest() == null
                 && (hdr.getType() == NakAckHeader2.XMIT_RSP || (hdr.getType() == NakAckHeader2.MSG && msg.isFlagSet(Message.TransientFlag.DONT_BLOCK)))) {
@@ -43,6 +45,12 @@ public class CCSUtil {
         } else {
             return -1L;
         }
+    }
+    
+    static public long getSeqNo(Message msg) {
+        if (msg == null) return -1;
+        NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
+        return hdr == null || hdr.getType() == NakAckHeader2.HIGHEST_SEQNO ? -1 : hdr.getSeqno();
     }
     
 }

@@ -119,6 +119,12 @@ public abstract class Protocol implements Lifecycle {
     static public final CCSProperty ccs_prop_sendfail = CCSProperty.make("ccs.jg.sendfail");
 
     /**
+     * Log messages received by TP. Log level for each type of NAKACK2 header.
+     * Example: system.property.ccs.jg.tp.receive=FINEST;MSG;XMIT_REQ:FINE;XMIT_RSP:WARNING;HIGHEST_SEQNO:FINE
+     */
+    static public final CCSProperty ccs_prop_tp_receive = CCSProperty.make("ccs.jg.tp.receive");
+
+    /**
      * General debugging.
      * "bundler-send" - log sending any messages by BaseBundler
      */

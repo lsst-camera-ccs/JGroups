@@ -19,6 +19,7 @@ import org.jgroups.ccs.CCSUtil;
 import static org.jgroups.conf.AttributeType.SCALAR;
 import org.jgroups.protocols.pbcast.NakAckHeader2;
 import org.jgroups.stack.Protocol;
+import org.jgroups.util.SeqnoList;
 
 /**
  * This bundler adds all (unicast or multicast) messages to a queue until max size has been exceeded, but does send
@@ -116,10 +117,20 @@ public class TransferQueueBundler extends BaseBundler implements Runnable {
     // CCS begin
     @Override
     protected void sendSingleMessage(Message msg) {
-        if (Protocol.ccs_prop_retransmit.getBoolean("bundler")) {
+        if (Protocol.ccs_prop_retransmit.getBoolean("suppress-bundler")) {
             long seqno = CCSUtil.getRetransmissionSeqNo(msg);
             if (seqno > -1) {
                 retransmissionsInQueue.remove(seqno);
+            }
+        }
+        if (log.isEnabled(Protocol.ccs_prop_tp_receive.getLevel("XMIT_REQ"))) {
+            NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
+            if (hdr != null && hdr.getType() == NakAckHeader2.XMIT_REQ) {
+                if (msg.getObject() instanceof SeqnoList sl) {
+                    for (long seqno : sl) {
+                        transport.addRequest(msg.getDest(), seqno);
+                    }
+                }
             }
         }
         super.sendSingleMessage(msg);
@@ -127,11 +138,23 @@ public class TransferQueueBundler extends BaseBundler implements Runnable {
 
     @Override
     protected void sendMessageList(Address dest, Address src, List<Message> list) {
-        if (Protocol.ccs_prop_retransmit.getBoolean("bundler")) {
+        if (Protocol.ccs_prop_retransmit.getBoolean("suppress-bundler")) {
             for (Message msg : list) {
                 long seqno = CCSUtil.getRetransmissionSeqNo(msg);
                 if (seqno > -1) {
                     retransmissionsInQueue.remove(seqno);
+                }
+            }
+        }
+        if (log.isEnabled(Protocol.ccs_prop_tp_receive.getLevel("XMIT_REQ"))) {
+            for (Message msg : list) {
+                NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
+                if (hdr != null && hdr.getType() == NakAckHeader2.XMIT_REQ) {
+                    if (msg.getObject() instanceof SeqnoList sl) {
+                        for (long seqno : sl) {
+                            transport.addRequest(msg.getDest(), seqno);
+                        }
+                    }
                 }
             }
         }
@@ -146,7 +169,7 @@ public class TransferQueueBundler extends BaseBundler implements Runnable {
             // CCS begin
 //            if(!queue.offer(msg))
 //                num_drops_on_full_queue++;
-            boolean filter = Protocol.ccs_prop_retransmit.getBoolean("bundler");
+            boolean filter = Protocol.ccs_prop_retransmit.getBoolean("suppress-bundler");
             long seqno = -1;
             long now = -1;
             if (filter) {
