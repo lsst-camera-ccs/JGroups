@@ -13,7 +13,9 @@ import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
 import org.jgroups.Address;
+import org.jgroups.ccs.CCSLog;
 import org.jgroups.ccs.CCSUtil;
 
 import static org.jgroups.conf.AttributeType.SCALAR;
@@ -116,14 +118,14 @@ public class TransferQueueBundler extends BaseBundler implements Runnable {
 
     // CCS begin
     @Override
-    protected void sendSingleMessage(Message msg) {
-        if (Protocol.ccs_prop_retransmit.getBoolean("suppress-bundler")) {
+    protected void sendSingleMessage(Message msg) { // called on the exit from bundler queue
+        if (Protocol.ccs_prop_retransmit.getBoolean("suppress-bundler")) { // remove seqno from the set of queued retransmissions used to suppress new requests.
             long seqno = CCSUtil.getRetransmissionSeqNo(msg);
             if (seqno > -1) {
                 retransmissionsInQueue.remove(seqno);
             }
         }
-        if (log.isEnabled(Protocol.ccs_prop_tp_receive.getLevel("XMIT_REQ"))) {
+        if (log.isEnabled(Protocol.ccs_prop_tp_receive.getLevel("XMIT_REQ"))) { // save requested seqnos to identify retransmissions later
             NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
             if (hdr != null && hdr.getType() == NakAckHeader2.XMIT_REQ) {
                 if (msg.getObject() instanceof SeqnoList sl) {
@@ -138,7 +140,7 @@ public class TransferQueueBundler extends BaseBundler implements Runnable {
 
     @Override
     protected void sendMessageList(Address dest, Address src, List<Message> list) {
-        if (Protocol.ccs_prop_retransmit.getBoolean("suppress-bundler")) {
+        if (Protocol.ccs_prop_retransmit.getBoolean("suppress-bundler")) { // remove seqno from the set of queued retransmissions used to suppress new requests.
             for (Message msg : list) {
                 long seqno = CCSUtil.getRetransmissionSeqNo(msg);
                 if (seqno > -1) {
@@ -146,7 +148,7 @@ public class TransferQueueBundler extends BaseBundler implements Runnable {
                 }
             }
         }
-        if (log.isEnabled(Protocol.ccs_prop_tp_receive.getLevel("XMIT_REQ"))) {
+        if (log.isEnabled(Protocol.ccs_prop_tp_receive.getLevel("XMIT_REQ"))) { // save requested seqnos to identify retransmissions later
             for (Message msg : list) {
                 NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
                 if (hdr != null && hdr.getType() == NakAckHeader2.XMIT_REQ) {
@@ -189,6 +191,10 @@ public class TransferQueueBundler extends BaseBundler implements Runnable {
                     seqno = hdr.getSeqno();
                     Long prev = retransmissionsInQueue.get(seqno);
                     if (prev != null && now - prev <= MAX_RETRANSMISSION_HOLD) {
+                        Level level = Protocol.ccs_prop_retransmit.getLevel("suppress-bundler");
+                        if (log.isEnabled(level)) {
+                            log.out(level, "Bundler: supressing retransmission "+ seqno);
+                        }
                         return; // dropping retransmission
                     }
                 }
@@ -197,13 +203,18 @@ public class TransferQueueBundler extends BaseBundler implements Runnable {
                 if (seqno > -1) { // retransmission goes into bundle queue - add it to retransmissionsInQueue
                     retransmissionsInQueue.put(seqno, now);
                 }
+                if (Protocol.ccs_prop_bundler_in.isSet()) {
+                    byte type = CCSUtil.getNakack2Type(msg);
+                    if (type > 0 && log.isEnabled(ccs_prop_bundler_in_level[type])) {
+                        log.out(ccs_prop_bundler_in_level[type], "Bundler: in "+ CCSLog.toSeqNoString(msg) +".");
+                    }
+                }
             } else {
                 num_drops_on_full_queue++;
-                if (Protocol.ccs_prop_retransmit.isLogEnabled(log)) {
-                    NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
-                    if (hdr != null && msg.getDest() == null &&
-                            (hdr.getType() == NakAckHeader2.XMIT_RSP || (hdr.getType() == NakAckHeader2.MSG && msg.isFlagSet(Message.TransientFlag.DONT_BLOCK)))) {
-                        log.out(Protocol.ccs_prop_retransmit.getLevel(), "TransferQueueBundler: dropped "+ NakAckHeader2.type2Str(hdr.getType()) +" {" + hdr.getSeqno() + "}.");
+                if (Protocol.ccs_prop_bundler_in.isSet()) {
+                    byte type = CCSUtil.getNakack2Type(msg);
+                    if (type > 0 && log.isEnabled(ccs_prop_bundler_in_level[type])) {
+                        log.out(ccs_prop_bundler_in_level[type], "Bundler: dropped "+ CCSLog.toSeqNoString(msg) +".");
                     }
                 }
             }

@@ -1,6 +1,7 @@
 package org.jgroups.ccs;
 
-import java.util.ArrayList;
+import java.util.*;
+import java.util.logging.Level;
 import org.jgroups.Address;
 import org.jgroups.JChannel;
 import org.jgroups.Message;
@@ -283,7 +284,7 @@ public class CCSLog implements Log {
         return sb.append(String.join("<-", mm)).append(". ").toString();
     }
 
-    public static String toString(Address address) {
+    static public String toString(Address address) {
         if (address == null) {
             return "null";
         }
@@ -300,18 +301,67 @@ public class CCSLog implements Log {
         return sb.toString();
     }
     
-    static public String getSeqNo(Message msg) {
-        NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
-        if (hdr == null) {
-            return "None";
-        } else {
-            return switch (hdr.getType()) {
-                case NakAckHeader2.HIGHEST_SEQNO -> "HS "+ hdr.getSeqno();
-                case NakAckHeader2.MSG, NakAckHeader2.XMIT_RSP -> Long.toString(hdr.getSeqno());
-                case NakAckHeader2.XMIT_REQ -> "REQ "+ ((SeqnoList)(msg.getObject()));
-                default -> throw new RuntimeException("Unknown NAKACK2 header type: ");
-            };
+    static public String toSeqNoString(Message msg) {
+        byte type = CCSUtil.getNakack2Type(msg);
+        switch (type) {
+            case NakAckHeader2.XMIT_REQ -> {
+                if (msg.getObject() instanceof SeqnoList sl) {
+                    return "XMIT_REQ " + sl;
+                } else {
+                    return "XMIT_REQ {}";
+                }
+            }
+            case NakAckHeader2.HIGHEST_SEQNO, NakAckHeader2.MSG, NakAckHeader2.XMIT_RSP -> {
+                long seqno = CCSUtil.getHeader(msg, NakAckHeader2.class).getSeqno();
+                return NakAckHeader2.type2Str(type) +" {"+ (seqno == -1 ? "" : Long.toString(seqno)) +"}";
+            }
+            default -> {
+                return "{}";
+            }
         }
+    }
+    
+    static public String toString(Iterable<Long> seqnos) {
+        if (seqnos == null) return "";
+        StringBuilder sb = new StringBuilder("");
+        long begin = -1;
+        long end = -1;
+        int n = 0;
+        Iterator<Long> it = seqnos.iterator();
+        while (it.hasNext()) {
+            Long current = it.next();
+            if (current != null) {
+                long v = current;
+                if (v != -1) {
+                    if (begin == -1) {
+                        end = begin = v;
+                    } else if (v == end + 1) {
+                        end = v;
+                    } else {
+                        if (!sb.isEmpty()) sb.append(",");
+                        sb.append(begin);
+                        if (begin != end) {
+                            sb.append(end - begin == 1 ? "," : "-").append(end);
+                        }
+                        end = begin = v;
+                    }
+                }
+            }
+        }
+        if (begin != -1) {
+            if (!sb.isEmpty()) sb.append(",");
+            sb.append(begin);
+            if (begin != end) {
+                sb.append(end - begin == 1 ? "," : "-").append(end);
+            }
+        }
+        return sb.insert(0, "{").append("}").toString();
+    }
+    
+    static public Level max(Level level1, Level level2) {
+        if (level1 == null) return level2;
+        if (level2 == null) return level1;
+        return level1.intValue() > level2.intValue() ? level1 : level2;
     }
 
 }

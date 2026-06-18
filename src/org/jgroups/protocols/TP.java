@@ -1332,7 +1332,7 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
 //        if(!batch.isEmpty())
 //            up_prot.up(batch);
         if(!batch.isEmpty()) {
-            if (Protocol.ccs_prop_retransmit.isLogEnabled(log) && local_addr != null && !local_addr.equals(batch.sender())) {
+            if (Protocol.ccs_prop_tp_receive.isLogEnabled(log) && local_addr != null && !local_addr.equals(batch.sender())) {
                 Object[] mmByType = new Object[5];
                 for (Message msg : batch) {
                     NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);

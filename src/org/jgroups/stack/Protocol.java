@@ -84,23 +84,43 @@ public abstract class Protocol implements Lifecycle {
     
     /**
      * Interfere with message retransmission. 
-     * Logs warnings on any retransmission errors.
-     * bool "suppress".
+     * "suppress" - activate duplicate retransmit request suppression at NAKACK2 level (can be mapped to LEVEL to log every suppression)
+     * "suppress-bundler" - activate duplicate retransmit request suppression at bundler queue level (can be mapped to LEVEL to log every suppression)
+     * "brief" - only log aggregate statistics on retransmissions (reduces number of logged messages).
+     * Suggested default: suppress:FINE;suppress-bundler:FINE;brief;WARNING.
+     * 
+     * Algorithms:
+     * "suppress":<ul>
+     * <li>{@code NAKACK2.xmit_prev} maintains a map of recent retransmissions: seqno -> millis time of last retransmission.
+     * <li>{@code NAKACK2.handleXmitReq(...)} suppresses retransmission of messages that were retransmitted less than {@code xmit_interval/2} ago.
+     * </ul>
+     * "suppress-bundler":<ul>
+     * <li>{@code TransferQueueBundler.retransmissionsInQueue} maintains a map of seqno to entry time for retransmissions in the bundler queue.
+     * <li>Entries older than {@code TransferQueueBundler.MAX_RETRANSMISSION_HOLD} (10 seconds) are removed from that map.
+     * <li>On entry to bundler queue, messages are dropped if their seqnos are already mapped to a moment less than {@code MAX_RETRANSMISSION_HOLD} in the past.
+     * <li>On exit from bundler queue, seqnos are removed from the set of queued retransmissions.
+     * </ul>
      */
     static public final CCSProperty ccs_prop_retransmit = CCSProperty.make("ccs.jg.retransmit");
     
     /**
      * Throttle message publication at int rate (MB/sec).
-     * Example: system.property.ccs.jg.throttle=100;FINE
+     * Format: [MB/sec];LEVEL
+     * Suggested default: 2;FINE.
      */
     static public final CCSProperty ccs_prop_throttle = CCSProperty.make("ccs.jg.throttle");
 
-    /** Message loss simulation. Double value [0,1] - portion of lost udp messages. */
+    /**
+     * Message loss simulation. Double value [0,1] - portion of lost UDP packets.
+     * Format: [double];LEVEL
+     * Suggested default: not set.
+     */
     static public final CCSProperty ccs_prop_debug_loss = CCSProperty.make("ccs.jg.debug.loss");
 
     /**
      * Detect and log unusual timing of message processing. Integer value - threshold in milliseconds.
-     * Example: system.property.ccs.jg.timing=500;INFO
+     * Format: [ms];LEVEL
+     * Suggested default: not set.
      */
     static public final CCSProperty ccs_prop_timing = CCSProperty.make("ccs.jg.timing");
 
@@ -108,7 +128,8 @@ public abstract class Protocol implements Lifecycle {
      * Detect and log larger than previously published messages.
      * int vetoSize - MB, do not detect below this size; default 1.
      * int vetoTime - seconds, reset previous size after this time; default .
-     * Example: system.property.ccs.jg.size=vetoSize:1;vetoTime:60;FINE
+     * Format: vetoSize:[MB];vetoTime:[seconds];LEVEL
+     * Suggested default: vetoSize:1;vetoTime:60;INFO
      */
     static public final CCSProperty ccs_prop_size = CCSProperty.make("ccs.jg.size");
 
@@ -120,15 +141,24 @@ public abstract class Protocol implements Lifecycle {
 
     /**
      * Log messages received by TP. Log level for each type of NAKACK2 header.
-     * Example: system.property.ccs.jg.tp.receive=FINEST;MSG;XMIT_REQ:FINE;XMIT_RSP:WARNING;HIGHEST_SEQNO:FINE
+     * Format: LEVEL;MSG;XMIT_REQ:LEVEL;XMIT_RSP:LEVEL;HIGHEST_SEQNO:LEVEL.
+     * Suggested default: not set.
      */
     static public final CCSProperty ccs_prop_tp_receive = CCSProperty.make("ccs.jg.tp.receive");
 
     /**
-     * General debugging.
-     * "bundler-send" - log sending any messages by BaseBundler
+     * Log sent messages on entry to the bundler queue selectively by NACKACK2 header type.
+     * Format: LEVEL;MSG;XMIT_REQ:LEVEL;XMIT_RSP:LEVEL;HIGHEST_SEQNO:LEVEL;fail:LEVEL;int:ms.
+     * Suggested default: not set.
      */
-    static public final CCSProperty ccs_prop_debug = CCSProperty.make("ccs.jg.debug");
+    static public final CCSProperty ccs_prop_bundler_in = CCSProperty.make("ccs.jg.bundler.in");
+
+    /**
+     * Log sent messages on exit from the bundler queue selectively by NACKACK2 header type.
+     * Format: LEVEL;MSG;XMIT_REQ:LEVEL;XMIT_RSP:LEVEL;HIGHEST_SEQNO:LEVEL;fail:LEVEL;int:ms.
+     * Suggested default: not set.
+     */
+    static public final CCSProperty ccs_prop_bundler_out = CCSProperty.make("ccs.jg.bundler.out");
     // CCS end
 
     protected List<Policy>         policies;

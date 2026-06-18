@@ -14,6 +14,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.Condition;
@@ -23,6 +24,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.logging.Level;
 
 import static org.jgroups.Message.Flag.NO_FC;
 import static org.jgroups.Message.Flag.OOB;
@@ -258,6 +260,58 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
     
     // CCS begin
     private final Map<Long,Long> xmit_prev = new ConcurrentHashMap<>(); // seqno -> millis time of last retransmission
+    private final Map<String,AtomicIntegerArray> brief = new ConcurrentHashMap<>(); // requester -> number of requests
+    private volatile long briefLastRun;
+    private final long BRIEF_PERIOD = 10000;
+    private void logRetransmitRequest(Iterable<Long> accept, Iterable<Long> suppress, String requester) {
+        Level level = Protocol.ccs_prop_retransmit.getLevel();
+        if (log.isEnabled(level)) {
+            if (Protocol.ccs_prop_retransmit.getBoolean("brief")) {
+                AtomicIntegerArray requests = brief.computeIfAbsent(requester, s -> new AtomicIntegerArray(2));
+                if (accept != null) {
+                    int n = 0;
+                    if (accept instanceof Collection c) {
+                        n = c.size();
+                    } else {
+                        Iterator<Long> it = accept.iterator();
+                        while (it.hasNext()) {it.next(); n++;}
+                    }
+                    requests.addAndGet(0, n);
+                }
+                if (suppress != null) {
+                    int n = 0;
+                    if (suppress instanceof Collection c) {
+                        n = c.size();
+                    } else {
+                        Iterator<Long> it = suppress.iterator();
+                        while (it.hasNext()) {it.next(); n++;}
+                    }
+                    requests.addAndGet(1, n);
+                }
+                long now = System.currentTimeMillis();
+                if (now - briefLastRun > BRIEF_PERIOD) { // what follows is not strictly thread-safe but fast and acceptable
+                    briefLastRun = now;
+                    TreeMap<String,AtomicIntegerArray> briefCopy = new TreeMap<>(brief);
+                    brief.clear();
+                    StringBuilder sb = new StringBuilder("NAKACK2: Retransmission requests in the last ").append(BRIEF_PERIOD/1000).append(" seconds:").append(System.lineSeparator());
+                    briefCopy.forEach((agent, n) -> {
+                        sb.append(agent).append(" ").append(n.get(0)).append(" / ").append(n.get(1)).append(System.lineSeparator());
+                    });
+                    log.out(level, sb.toString());
+                }
+            } else {
+                StringBuilder sb = new StringBuilder("NAKACK2: ");
+                if (accept != null) {
+                    sb.append("Accept retransmit request for ").append(CCSLog.toString(accept)).append(".");
+                }
+                if (suppress != null) {
+                    sb.append("Suppress retransmit request for ").append(CCSLog.toString(suppress)).append(".");
+                }
+                sb.append(" From ").append(requester).append(".");
+                log.out(level, sb.toString());
+            }
+        }
+    }
     // CCS end
 
     public long    getXmitRequestsReceived()               {return xmit_reqs_received.sum();}
@@ -986,8 +1040,8 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
             if (original_sender.equals(local_addr)) {
                 if (ccs_prop_retransmit.getBoolean("suppress") && use_mcast_xmit) { // suppress retransmission of messages that were retransmitted less that xmit_interval/2 ago
                     int n = missing_msgs.size();
-                    ArrayList<String> pass = new ArrayList<>(n);
-                    ArrayList<String> suppress = new ArrayList<>(n);
+                    ArrayList<Long> accept = null;
+                    ArrayList<Long> suppress = null;
                     int i = 0;
                     long now = System.currentTimeMillis();
                     Iterator<Long> it = missing_msgs.iterator();
@@ -995,26 +1049,30 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
                         long sn = it.next();
                         long t = xmit_prev.merge(sn, now, (old, cur) -> (cur-old)>(xmit_interval/2) ? cur : old-1);
                         if (t == now) {
-                            pass.add(Long.toString(sn));
+                            if (accept == null) accept = new ArrayList<>(n);
+                            accept.add(sn);
                         } else {
-                            suppress.add(Long.toString(sn));
+                            if (suppress == null) suppress = new ArrayList<>(n);
+                            suppress.add(sn);
                             it.remove();
                         }
                     }
-                    if (suppress.isEmpty()) {
-                        log.out(ccs_prop_retransmit.getLevel(), "NAKACK2: fulfill retransmit request from "+ CCSLog.toString(xmit_requester) +" for "+ missing_msgs);
-                    } else if (pass.isEmpty()) {
-                        log.out(ccs_prop_retransmit.getLevel(), "NAKACK2: suppressed retransmit request from "+ CCSLog.toString(xmit_requester) +" for {"+ String.join(", ", suppress) +"}");
-                        return;
-                    } else {
-                        log.out(ccs_prop_retransmit.getLevel(), "NAKACK2: retransmit request from "+ CCSLog.toString(xmit_requester) +
-                                ", suppress {"+ String.join(", ", suppress) +"}, retransmit {"+ String.join(", ", pass) +"}");
-                    }
+                    logRetransmitRequest(accept, suppress, CCSLog.toString(xmit_requester));
+//                    if (suppress.isEmpty()) {
+//                        log.out(ccs_prop_retransmit.getLevel(), "NAKACK2: accept retransmit request from "+ CCSLog.toString(xmit_requester) +" for "+ missing_msgs);
+//                    } else if (accept.isEmpty()) {
+//                        log.out(ccs_prop_retransmit.getLevel(), "NAKACK2: suppressed retransmit request from "+ CCSLog.toString(xmit_requester) +" for "+ CCSLog.toString(suppress) +".");
+//                        return;
+//                    } else {
+//                        log.out(ccs_prop_retransmit.getLevel(), "NAKACK2: retransmit request from "+ CCSLog.toString(xmit_requester) +
+//                                ", suppress "+ CCSLog.toString(suppress) +", retransmit "+ CCSLog.toString(accept) +".");
+//                    }
                 } else {
+                    logRetransmitRequest(missing_msgs, null, CCSLog.toString(xmit_requester));
                     log.out(ccs_prop_retransmit.getLevel(), "NAKACK2: retransmit request from "+ CCSLog.toString(xmit_requester) +" FOR "+ missing_msgs);
                 }
             } else {
-                log.warn("NAKACK2: why am I handling retransmit request from "+ CCSLog.toString(xmit_requester) +" to "+ CCSLog.toString(original_sender));
+                log.warn("NAKACK2: Why am I handling retransmit request from "+ CCSLog.toString(xmit_requester) +" to "+ CCSLog.toString(original_sender) +"???");
             }
         }
         // CCS end
@@ -1550,8 +1608,6 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
         seqno.set(0);
         xmit_table.clear();
     }
-
-
 
     protected static long sizeOfAllMessages(Table<Message> buf, boolean include_headers) {
         return buf.stream().reduce(0L, (size,el) -> {

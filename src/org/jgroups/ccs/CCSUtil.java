@@ -36,6 +36,21 @@ public class CCSUtil {
                 && (hdr.getType() == NakAckHeader2.XMIT_RSP || (hdr.getType() == NakAckHeader2.MSG && msg.isFlagSet(Message.TransientFlag.DONT_BLOCK))));
     }
     
+    static public byte getNakack2Type(Message msg) {
+        if (msg== null) return 0;
+        NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
+        if (hdr == null) return 0;
+        byte type = hdr.getType();
+        return switch (type) {
+            case NakAckHeader2.HIGHEST_SEQNO, NakAckHeader2.XMIT_REQ, NakAckHeader2.XMIT_RSP -> type;
+            case NakAckHeader2.MSG -> msg.isFlagSet(Message.TransientFlag.DONT_BLOCK) ? NakAckHeader2.XMIT_RSP : NakAckHeader2.MSG;
+            default -> 0;
+        };
+    }
+    
+    /**
+     * Returns seqno of outgoing retransmission, or -1.
+     */
     static public long getRetransmissionSeqNo(Message msg) {
         if (msg == null) return -1;
         NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
@@ -50,7 +65,7 @@ public class CCSUtil {
     static public long getSeqNo(Message msg) {
         if (msg == null) return -1;
         NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
-        return hdr == null || hdr.getType() == NakAckHeader2.HIGHEST_SEQNO ? -1 : hdr.getSeqno();
+        return hdr == null ? -1 : hdr.getSeqno();
     }
     
 }

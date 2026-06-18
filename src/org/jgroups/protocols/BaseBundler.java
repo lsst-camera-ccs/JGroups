@@ -14,13 +14,16 @@ import org.jgroups.util.Util;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 import org.jgroups.ccs.CCSLog;
+import org.jgroups.ccs.CCSProperty;
 import org.jgroups.ccs.CCSUtil;
 
 import static org.jgroups.protocols.TP.MSG_OVERHEAD;
@@ -57,8 +60,11 @@ public abstract class BaseBundler implements Bundler {
 
     @ManagedAttribute(description="Time (us) to send the bundled messages")
     protected final AverageMinMax               avg_send_time=new AverageMinMax().unit(TimeUnit.MICROSECONDS);
-
-
+    
+    // CCS begin
+    protected volatile Level[] ccs_prop_bundler_in_level;
+    protected volatile Level[] ccs_prop_bundler_out_level;
+    // CCS end
 
     public int     getCapacity()       {return capacity;}
     public Bundler setCapacity(int c)  {this.capacity=c; return this;}
@@ -69,6 +75,25 @@ public abstract class BaseBundler implements Bundler {
         this.transport=transport;
         log=transport.getLog();
         output=new ByteArrayDataOutputStream(max_size + MSG_OVERHEAD);
+        // CCS begin
+        CCSProperty.Listener ccs_prop_bundler_out_listener = p -> {
+            Level[] out = new Level[5];
+            if (p.isSet()) {
+                for (byte i=1; i<5; i++) {
+                    out[i] = Protocol.ccs_prop_bundler_out.getLevel(NakAckHeader2.type2Str(i));
+                }
+            }
+            if (p == Protocol.ccs_prop_bundler_in) {
+                ccs_prop_bundler_in_level = out;
+            } else {
+                ccs_prop_bundler_out_level = out;
+            }
+        };
+        Protocol.ccs_prop_bundler_in.addListener(ccs_prop_bundler_out_listener);
+        ccs_prop_bundler_out_listener.changed(Protocol.ccs_prop_bundler_in);
+        Protocol.ccs_prop_bundler_out.addListener(ccs_prop_bundler_out_listener);
+        ccs_prop_bundler_out_listener.changed(Protocol.ccs_prop_bundler_out);
+        // CCS end
     }
 
     public void resetStats() {
@@ -128,58 +153,42 @@ public abstract class BaseBundler implements Bundler {
     protected void sendSingleMessage(final Message msg) {
         // CCS begin
         Level level = null;
-        StringBuilder sb = null;
-        boolean ccs = Protocol.ccs_prop_retransmit.isLogEnabled(log);
-        if (ccs) {
-            NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
-            ccs = hdr != null &&
-                 (    hdr.getType() == NakAckHeader2.XMIT_RSP || 
-                      hdr.getType() == NakAckHeader2.XMIT_REQ || 
-                      (hdr.getType() == NakAckHeader2.MSG && msg.isFlagSet(Message.TransientFlag.DONT_BLOCK))    );
-            if (ccs) {
-                level = Protocol.ccs_prop_retransmit.getLevel();
-                sb = new StringBuilder();
-                sb.append("BaseBundler: sent retransmit ").append(NakAckHeader2.type2Str(hdr.getType())).append(" ");
-                if (hdr.getType() == NakAckHeader2.XMIT_REQ) {
-                    if (msg.getObject() instanceof SeqnoList s) {
-                        sb.append(s);
-                    } else {
-                        sb.append("{unknown}");
-                    }
-                } else {
-                    sb.append("{").append(hdr.getSeqno()).append("}");
-                }
-                sb.append(".");
+        long time1 = 0;
+        long maxTime = 0;
+        boolean logEnabled = Protocol.ccs_prop_bundler_out.isSet();
+        if (logEnabled) {
+            maxTime = Protocol.ccs_prop_bundler_out.getInt();
+            byte type = CCSUtil.getNakack2Type(msg);
+            level = ccs_prop_bundler_out_level[type];
+            logEnabled = type != 0 && log.isEnabled(level);
+            if (logEnabled || maxTime > 0) {
+                time1 = System.currentTimeMillis();
             }
         }
-        long time1 = System.currentTimeMillis();
         // CCS end
         Address dest=msg.getDest();
         try {
             Util.writeMessage(msg, output, dest == null);
             // CCS begin
-            long time2 = System.currentTimeMillis();
+            long time2 = logEnabled || maxTime > 0 ? System.currentTimeMillis() : 0;
             // CCS end
             transport.doSend(output.buffer(), 0, output.position(), dest);
             // CCS begin
-            if (ccs) {
-                sb.append(" Timing: ").append(time2-time1).append(" + ").append(System.currentTimeMillis() - time2).append(" ms.");
-                log.out(level, sb.toString());
+            long timeToSerialize = time2-time1;
+            long timeToSend = System.currentTimeMillis() - time2;
+            if (maxTime > 0 && timeToSerialize + timeToSend > maxTime) {
+                log.warn("Bundler: long time to send "+ msg +". Timing: "+ timeToSerialize +" + "+ timeToSend +" ms.");
             }
-            if (Protocol.ccs_prop_debug.getBoolean("bundler-send")) {
-                log.out("BaseBundler: sent {"+ CCSLog.getSeqNo(msg) +"}. Timing: "+ (time2-time1) +" + "+ (System.currentTimeMillis() - time2) +" ms.");
+            if (logEnabled) {
+                log.out(level, "Bundler: out "+ CCSLog.toSeqNoString(msg) +". Timing: "+ timeToSerialize +" + "+ timeToSend +" ms.");
             }
             // CCS end
             transport.getMessageStats().incrNumSingleMsgsSent();
         }
         catch(Throwable e) {
             // CCS begin
-            if (ccs) {
-                log.out(level, sb.append(" FAILED.").toString(), e);
-            }
-            if (Protocol.ccs_prop_debug.getBoolean("bundler-send")) {
-                log.out("BaseBundler: failure {"+ CCSLog.getSeqNo(msg) +"}.");
-            }
+            level = logEnabled ? CCSLog.max(level, Protocol.ccs_prop_bundler_out.getLevel("fail")) : Protocol.ccs_prop_bundler_out.getLevel("fail");
+            log.out(level, "Bundler: out "+ CCSLog.toSeqNoString(msg) +". FAILED.", e);
             // CCS end
             log.trace(Util.getMessage("SendFailure"),
                       transport.getAddress(), (dest == null? "cluster" : dest), msg.size(), e.toString(), msg.printHeaders());
@@ -188,51 +197,30 @@ public abstract class BaseBundler implements Bundler {
 
     protected void sendMessageList(final Address dest, final Address src, final List<Message> list) {
         // CCS begin
-        boolean ccs = Protocol.ccs_prop_retransmit.isLogEnabled(log);
-        Level level = null;
-        long time1 = System.currentTimeMillis();
-        List<String> requests = new LinkedList<>();
-        List<String> responses = new LinkedList<>();
-        StringBuilder sb = null;
-        if (ccs) {
-            for (Message msg : list) {
-                NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
-                if (hdr != null) {
-                    byte type = hdr.getType();
-                    if (type == NakAckHeader2.XMIT_REQ && msg.getObject() instanceof SeqnoList seqnoList) {
-                        requests.add(seqnoList.toString());
-                    } else if ((msg.isFlagSet(Message.TransientFlag.DONT_BLOCK) && type == NakAckHeader2.MSG) || type == NakAckHeader2.XMIT_RSP) {
-                        responses.add(Long.toString(hdr.getSeqno()));
-                    }
-                }
-            }
-            ccs = !(requests.isEmpty() && responses.isEmpty());
-            if (ccs) {
-                level = Protocol.ccs_prop_retransmit.getLevel();
-                sb = new StringBuilder();
-                sb.append("BaseBundler: sending bundle. ");
-                if (!requests.isEmpty()) {
-                    sb.append("Requests: {").append(String.join(", ", requests)).append("}. Destination: ").append(CCSLog.toString(dest));
-                }
-                if (!responses.isEmpty()) {
-                    sb.append("Responses: {").append(String.join(", ", responses)).append("}");
-                }
-            }
-        }
+        boolean ccs = Protocol.ccs_prop_bundler_out.isSet();
+        long time1 = ccs ? System.currentTimeMillis() : 0;
         // CCS end
         try {
             Util.writeMessageList(dest, src, transport.cluster_name.chars(), list, output, dest == null);
             // CCS begin
-            long time2 = System.currentTimeMillis();
+            long time2 = ccs ? System.currentTimeMillis() : 0;
             // CCS end
             transport.doSend(output.buffer(), 0, output.position(), dest);
             // CCS begin
             if (ccs) {
-                sb.append(" Timing: ").append(time2-time1).append(" + ").append(System.currentTimeMillis() - time2).append(" ms.");
-                log.out(level, sb.toString());
-            }
-            if (Protocol.ccs_prop_debug.getBoolean("bundler-send")) {
-                log.out("BaseBundler: bundle {"+ String.join(System.lineSeparator(), list.stream().map(m -> CCSLog.getSeqNo(m)).toList()) +"} Timing: "+ (time2-time1) +" + "+ (System.currentTimeMillis() - time2) +" ms.");
+                long timeToSerialize = time2-time1;
+                long timeToSend = System.currentTimeMillis() - time2;
+                long maxTime = Protocol.ccs_prop_bundler_out.getInt();
+                if (maxTime > 0 && timeToSerialize + timeToSend > maxTime) {
+                    log.warn("Bundler: long time to send message list. Timing: "+ timeToSerialize +" + "+ timeToSend +" ms.");
+                }
+                LogString s = toString(list, false);
+                if (s != null) {
+                    StringBuilder sb = new StringBuilder("Bundler: out ");
+                    sb.append(s.text);
+                    sb.append(" Timing: ").append(time2-time1).append(" + ").append(System.currentTimeMillis() - time2).append(" ms.");
+                    log.out(s.level, sb.toString());
+                }
             }
             // CCS end
             transport.getMessageStats().incrNumBatchesSent();
@@ -240,10 +228,11 @@ public abstract class BaseBundler implements Bundler {
         catch(Throwable e) {
             // CCS begin
             if (ccs) {
-                log.out(Protocol.ccs_prop_retransmit.getLevel(), sb.append(". FAILED.").toString(), e);
-            }
-            if (Protocol.ccs_prop_debug.getBoolean("bundler-send")) {
-                log.out("BaseBundler: bundle failure {"+ String.join(System.lineSeparator(), list.stream().map(m -> CCSLog.getSeqNo(m)).toList()) +"}", e);
+                LogString s = toString(list, true);
+                if (s != null) {
+                    Level level = CCSLog.max(s.level, Protocol.ccs_prop_bundler_out.getLevel("fail"));
+                    log.out(level, "Bundler: out "+ s.text + " FAILED.", e);
+                }
             }
             // CCS end
             log.trace(Util.getMessage("FailureSendingMsgBundle"), transport.getAddress(), e);
@@ -256,4 +245,39 @@ public abstract class BaseBundler implements Bundler {
         tmp.add(msg);
         count+=size;
     }
+    
+    // CCS begin
+    protected record LogString(String text, Level level) {};
+    protected LogString toString(List<Message> mm, boolean all) {
+        Level maxLevel = null;
+        Object[] messagesByType = new Object[5];
+        for (Message m : mm) {
+            byte type = CCSUtil.getNakack2Type(m);
+            if (type > 0 && (all || log.isEnabled(ccs_prop_bundler_out_level[type]))) {
+                Set<Long> seqnos = (Set<Long>) messagesByType[type];
+                if (seqnos == null) {
+                    seqnos = new TreeSet<>();
+                    messagesByType[type] = seqnos;
+                }
+                if (type == NakAckHeader2.XMIT_REQ && m.getObject() instanceof SeqnoList sl) {
+                    Iterator<Long> it = sl.iterator();
+                    while (it.hasNext()) seqnos.add(it.next());
+                } else {
+                    long seqno = CCSUtil.getSeqNo(m);
+                    if (seqno != -1) seqnos.add(seqno);
+                }
+                maxLevel = CCSLog.max(maxLevel, ccs_prop_bundler_out_level[type]);
+            }
+        }
+        StringBuilder sb = new StringBuilder();
+        for (byte type = 1; type < 5; type++) {
+            Set<Long> seqnos = (Set<Long>) messagesByType[type];
+            if (seqnos != null) {
+                if (!sb.isEmpty()) sb.append(", ");
+                sb.append(NakAckHeader2.type2Str(type)).append(" ").append(CCSLog.toString(seqnos));
+            }
+        }
+        return maxLevel == null ? null : new LogString(sb.toString(), maxLevel);
+    }
+    // CCS end
 }
