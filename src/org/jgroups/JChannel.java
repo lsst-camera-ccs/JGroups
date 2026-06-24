@@ -7,7 +7,6 @@ import org.jgroups.conf.ConfiguratorFactory;
 import org.jgroups.conf.ProtocolConfiguration;
 import org.jgroups.conf.ProtocolStackConfigurator;
 import org.jgroups.logging.Log;
-import org.jgroups.logging.LogFactory;
 import org.jgroups.protocols.TP;
 import org.jgroups.stack.*;
 import org.jgroups.util.UUID;
@@ -25,6 +24,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.function.Consumer;
 import org.jgroups.ccs.CCSLog;
+import org.jgroups.ccs.CCSProperty;
 import org.jgroups.stack.Protocol;
 
 /**
@@ -210,14 +210,9 @@ public class JChannel implements Closeable {
         
         if ("STATUS".equals(cluster_name)) {
             StringBuilder sb = new StringBuilder("JGroups CCS properties:").append(System.lineSeparator());
-            sb.append(Protocol.ccs_prop_connect).append(System.lineSeparator());
-            sb.append(Protocol.ccs_prop_physical).append(System.lineSeparator());
-            sb.append(Protocol.ccs_prop_retransmit).append(System.lineSeparator());
-            sb.append(Protocol.ccs_prop_throttle).append(System.lineSeparator());
-            sb.append(Protocol.ccs_prop_sendfail).append(System.lineSeparator());
-            sb.append(Protocol.ccs_prop_size).append(System.lineSeparator());
-            sb.append(Protocol.ccs_prop_timing).append(System.lineSeparator());
-            sb.append(Protocol.ccs_prop_debug_loss).append(System.lineSeparator());
+            for (CCSProperty p : CCSProperty.getRegisteredProperties()) {
+                sb.append(p).append(System.lineSeparator());
+            }
             log.warn(sb.toString());
         }
         

@@ -300,11 +300,20 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
                     log.out(level, sb.toString());
                 }
             } else {
+                Level supLevel = level;
+                boolean supEnabled = false;
+                if (suppress != null) {
+                    supLevel = Protocol.ccs_prop_retransmit.getLevel("suppress");
+                    supEnabled = log.isEnabled(supLevel);
+                    if (!supEnabled && accept == null) return;
+                }
                 StringBuilder sb = new StringBuilder("NAKACK2: ");
                 if (accept != null) {
-                    sb.append("Accept retransmit request for ").append(CCSLog.toString(accept)).append(".");
+                    sb.append("Retransmit request for ").append(CCSLog.toString(accept)).append(".");
+                } else {
+                    level = supLevel;
                 }
-                if (suppress != null) {
+                if (supEnabled) {
                     sb.append("Suppress retransmit request for ").append(CCSLog.toString(suppress)).append(".");
                 }
                 sb.append(" From ").append(requester).append(".");
