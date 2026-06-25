@@ -104,6 +104,11 @@ public abstract class Protocol implements Lifecycle {
     static public final CCSProperty ccs_prop_retransmit = CCSProperty.make("ccs.jg.retransmit");
     
     /**
+     * Mitigate race condition between regular messages and HIGHEST_SEQNO.
+     */
+    static public final CCSProperty ccs_prop_hseqno = CCSProperty.make("ccs.jg.hseqno");
+    
+    /**
      * Throttle message publication at int rate (MB/sec).
      * Format: [MB/sec];LEVEL
      * Suggested default: 2;FINE.

@@ -259,7 +259,10 @@ public class TransferQueueBundler extends BaseBundler implements Runnable {
 
     protected void addAndSendIfSizeExceeded(Message msg) {
         int size=msg.size();
-        if(count + size > max_size) {
+        // CCS begin
+//        if(count + size > max_size) {
+        if(count + size > max_size || (CCSUtil.getNakack2Type(msg) == NakAckHeader2.HIGHEST_SEQNO && Protocol.ccs_prop_hseqno.isSet())) {
+        // CCSend
             num_sends_because_full_queue++;
             avg_fill_count.add(count);
             sendBundledMessages();

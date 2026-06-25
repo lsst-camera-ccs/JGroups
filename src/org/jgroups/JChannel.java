@@ -213,7 +213,7 @@ public class JChannel implements Closeable {
             for (CCSProperty p : CCSProperty.getRegisteredProperties()) {
                 sb.append(p).append(System.lineSeparator());
             }
-            log.warn(sb.toString());
+            log.info(sb.toString());
         }
         
         maxSizeVeto = Protocol.ccs_prop_size.getInt("vetoSize");
