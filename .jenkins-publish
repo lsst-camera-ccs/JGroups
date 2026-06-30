@@ -1,0 +1,4 @@
+#Branches to publish
+#Include main and develop, nX-(main/develop)
+.*main
+.*develop
