@@ -23,6 +23,7 @@ public class CCSProperty {
     private final String name;
     
     private volatile Level levelValue; // Unnamed level, or ALL
+    private volatile Level maxLevelValue;
     private volatile int intValue; // unnamed int, or Integer.MIN_VALUE
     private volatile double doubleValue; // unnamed double, or Double.NaN
     private volatile boolean booleanValue; // unnamed boolean, or false
@@ -172,6 +173,7 @@ public class CCSProperty {
                 booleanValue = booleanV;
                 data = dataV;
             }
+            computeMaxLevel();
         }
         notifyListeners();
         return this;
@@ -280,6 +282,7 @@ public class CCSProperty {
                     }
                 }
             }
+            computeMaxLevel();
         }
         notifyListeners();
         return this;
@@ -377,10 +380,18 @@ public class CCSProperty {
     
     /**
      * Returns the default logging level associated with this property.
-     * @return Specified logging level, or {@code INFO} if it has not been explicitly specified.
+     * @return Specified logging level, or {@code ALL} if it has not been explicitly specified.
      */
     public Level getLevel() {
         return levelValue;
+    }
+    
+    /**
+     * Returns maximum logging level associated with this property.
+     * @return Specified logging level, or {@code ALL} if it has not been explicitly specified.
+     */
+    public Level getMaxLevel() {
+        return maxLevelValue;
     }
     
     /**
@@ -433,8 +444,8 @@ public class CCSProperty {
      * @param properties Properties to check
      * @return Max logging level.
      */
-    static public Level getMaxLevel(CCSProperty... properties) {
-        Level out = null;
+    static public Level getMaxLevel(CCSProperty property, CCSProperty... properties) {
+        Level out = property.getLevel();
         for (CCSProperty p : properties) {
             Level level = p.getLevel();
             if (level != null) {
@@ -467,6 +478,22 @@ public class CCSProperty {
     
     public void notifyListeners() {
         listeners.forEach(lis -> lis.changed(this));
+    }
+    
+    
+// -- Local methods : ----------------------------------------------------------
+    
+    private void computeMaxLevel() {
+        Level out = levelValue;
+        if (data != null) {
+            for (String key : data.keySet()) {
+                Level lev = getLevel(key);
+                if (lev != null && out.intValue() < lev.intValue()) {
+                    out = lev;
+                }
+            }
+        }
+        maxLevelValue = out;
     }
     
     

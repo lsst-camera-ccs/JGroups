@@ -145,6 +145,7 @@ public class UDP extends TP {
 
     // CCS begin
     private final MessageGate messageGate = new MessageGate(log);
+    boolean sendfail_reportSuccess;
     // CCS end
 
     static  {
@@ -303,8 +304,12 @@ public class UDP extends TP {
                 if (ccs_prop_sendfail.isLogEnabled(log)) {
                     try {
                         sock.send(packet);
+                        if (sendfail_reportSuccess) {
+                            sendfail_reportSuccess = false;
+                            log.out(ccs_prop_sendfail.getLevel(), "UDP: sent to "+ dest +":"+ port +", size "+ length +", offset "+ offset);
+                        }
                     } catch (IOException | RuntimeException x) {
-                        log.out(ccs_prop_sendfail.getLevel(), "Failed sending on "+ sock +", size "+ length, x);
+                        log.out(ccs_prop_sendfail.getLevel(), "UDP: Failed sending on "+ sock +", size "+ length, x);
                         checkTime = false;
                         throw x;
                     }
@@ -313,8 +318,8 @@ public class UDP extends TP {
                 }
                 if (checkTime) {
                     long delay = System.currentTimeMillis() - time;
-                    if (delay > ccs_prop_timing.getDouble()) {
-                        log.out(ccs_prop_timing.getLevel(), "socket.send(packet) took " + delay + " ms.");
+                    if (delay > ccs_prop_timing.getInt()) {
+                        log.out(ccs_prop_timing.getLevel(), "UDP: socket.send(packet) took " + delay + " ms.");
                     }
                 }
                 // CCS end

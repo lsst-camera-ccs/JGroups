@@ -265,9 +265,9 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
     private final long BRIEF_PERIOD = 10000;
     private void logRetransmitRequest(Iterable<Long> accept, Iterable<Long> suppress, String requester) {
         if (requester == null || (accept == null && suppress == null)) return;
-        Level level = Protocol.ccs_prop_retransmit.getLevel();
+        Level level = ccs_prop_retransmit.getLevel();
         if (log.isEnabled(level)) {
-            if (Protocol.ccs_prop_retransmit.getBoolean("brief")) {
+            if (ccs_prop_retransmit.getBoolean("brief")) {
                 AtomicIntegerArray requests = brief.computeIfAbsent(requester, s -> new AtomicIntegerArray(2));
                 if (accept != null) {
                     int n = 0;
@@ -293,7 +293,7 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
                 Level supLevel = level;
                 boolean supEnabled = false;
                 if (suppress != null) {
-                    supLevel = Protocol.ccs_prop_retransmit.getLevel("suppress");
+                    supLevel = ccs_prop_retransmit.getLevel("suppress");
                     supEnabled = log.isEnabled(supLevel);
                     if (!supEnabled && accept == null) return;
                 }
@@ -1692,7 +1692,7 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
             brief.clear();
             StringBuilder sb = new StringBuilder("NAKACK2: Retransmission requests in the last ").append(BRIEF_PERIOD / 1000).append(" seconds:").append(System.lineSeparator());
             briefCopy.forEach((agent, n) -> {
-                sb.append(agent).append(" ").append(n.get(0)).append(" / ").append(n.get(1)).append(System.lineSeparator());
+                sb.append(agent).append(" accepted ").append(n.get(0)).append(" / suppressed ").append(n.get(1)).append(System.lineSeparator());
             });
             log.out(ccs_prop_retransmit.getLevel(), sb.toString());
         }

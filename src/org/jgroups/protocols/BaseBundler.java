@@ -76,11 +76,11 @@ public abstract class BaseBundler implements Bundler {
         log=transport.getLog();
         output=new ByteArrayDataOutputStream(max_size + MSG_OVERHEAD);
         // CCS begin
-        CCSProperty.Listener ccs_prop_bundler_out_listener = p -> {
+        CCSProperty.Listener ccs_prop_bundler_listener = p -> {
             Level[] out = new Level[5];
             if (p.isSet()) {
                 for (byte i=1; i<5; i++) {
-                    out[i] = Protocol.ccs_prop_bundler_out.getLevel(NakAckHeader2.type2Str(i));
+                    out[i] = p.getLevel(NakAckHeader2.type2Str(i));
                 }
             }
             if (p == Protocol.ccs_prop_bundler_in) {
@@ -89,10 +89,10 @@ public abstract class BaseBundler implements Bundler {
                 ccs_prop_bundler_out_level = out;
             }
         };
-        Protocol.ccs_prop_bundler_in.addListener(ccs_prop_bundler_out_listener);
-        ccs_prop_bundler_out_listener.changed(Protocol.ccs_prop_bundler_in);
-        Protocol.ccs_prop_bundler_out.addListener(ccs_prop_bundler_out_listener);
-        ccs_prop_bundler_out_listener.changed(Protocol.ccs_prop_bundler_out);
+        Protocol.ccs_prop_bundler_in.addListener(ccs_prop_bundler_listener);
+        ccs_prop_bundler_listener.changed(Protocol.ccs_prop_bundler_in);
+        Protocol.ccs_prop_bundler_out.addListener(ccs_prop_bundler_listener);
+        ccs_prop_bundler_listener.changed(Protocol.ccs_prop_bundler_out);
         // CCS end
     }
 
@@ -171,6 +171,9 @@ public abstract class BaseBundler implements Bundler {
             Util.writeMessage(msg, output, dest == null);
             // CCS begin
             long time2 = logEnabled || maxTime > 0 ? System.currentTimeMillis() : 0;
+            if (Protocol.ccs_prop_sendfail.isLogEnabled(log) && CCSUtil.isRetransmission(msg) && transport instanceof UDP t) {
+                t.sendfail_reportSuccess = true;
+            }
             // CCS end
             transport.doSend(output.buffer(), 0, output.position(), dest);
             // CCS begin
@@ -180,7 +183,7 @@ public abstract class BaseBundler implements Bundler {
                 log.warn("Bundler: long time to send "+ msg +". Timing: "+ timeToSerialize +" + "+ timeToSend +" ms.");
             }
             if (logEnabled) {
-                log.out(level, "Bundler: out "+ CCSLog.toSeqNoString(msg) +". Timing: "+ timeToSerialize +" + "+ timeToSend +" ms.");
+                log.out(level, "Bundler: out "+ CCSLog.toSeqNoString(msg) +". Timing: "+ timeToSerialize +" + "+ timeToSend +" ms. Message: ["+ msg.size() +"] "+ msg);
             }
             // CCS end
             transport.getMessageStats().incrNumSingleMsgsSent();
@@ -204,6 +207,9 @@ public abstract class BaseBundler implements Bundler {
             Util.writeMessageList(dest, src, transport.cluster_name.chars(), list, output, dest == null);
             // CCS begin
             long time2 = ccs ? System.currentTimeMillis() : 0;
+            if (Protocol.ccs_prop_sendfail.isLogEnabled(log) && list.stream().anyMatch(m -> CCSUtil.isRetransmission(m)) && transport instanceof UDP t) {
+                t.sendfail_reportSuccess = true;
+            }
             // CCS end
             transport.doSend(output.buffer(), 0, output.position(), dest);
             // CCS begin

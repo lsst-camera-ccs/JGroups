@@ -29,11 +29,13 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.logging.Level;
 import org.jgroups.ccs.CCSLog;
 import org.jgroups.ccs.CCSUtil;
 
 import static org.jgroups.conf.AttributeType.SCALAR;
 import org.jgroups.protocols.pbcast.NakAckHeader2;
+import org.jgroups.stack.IpAddress;
 
 
 /**
@@ -1279,7 +1281,7 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
             }
         }
         // CCS begin
-        if (Protocol.ccs_prop_tp_receive.isSet() && local_addr != null && !local_addr.equals(msg.getSrc())) {
+        if (ccs_prop_tp_receive.isSet() && local_addr != null && !local_addr.equals(msg.getSrc())) {
             NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
             if (hdr != null) {
                 byte type = hdr.getType();
@@ -1288,7 +1290,7 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
                 }
                 String sSeqNo = type == NakAckHeader2.XMIT_REQ ? Objects.toString(msg.getObject()) : Long.toString(hdr.getSeqno());
                 String sType = NakAckHeader2.type2Str(type);
-                log.out(Protocol.ccs_prop_tp_receive.getLevel(sType), "TP: received " + sType + " {" + sSeqNo + "} from " + CCSLog.toString(msg.getSrc()));
+                log.out(Protocol.ccs_prop_tp_receive.getLevel(sType), "TP: received " + sType + " {" + sSeqNo + "} from " + CCSLog.toString(msg.getSrc()) +", size "+ msg.size());
             }
         }
         // CCS end
@@ -1332,7 +1334,7 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
 //        if(!batch.isEmpty())
 //            up_prot.up(batch);
         if(!batch.isEmpty()) {
-            if (Protocol.ccs_prop_tp_receive.isLogEnabled(log) && local_addr != null && !local_addr.equals(batch.sender())) {
+            if (ccs_prop_tp_receive.isSet() && local_addr != null && !local_addr.equals(batch.sender())) {
                 Object[] mmByType = new Object[5];
                 for (Message msg : batch) {
                     NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
@@ -1375,6 +1377,28 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
      * Subclasses must call this method when a unicast or multicast message has been received.
      */
     public void receive(Address sender, byte[] data, int offset, int length) {
+        // CCS begin
+        if (ccs_prop_receivefail.isLogEnabled(log)) {
+            boolean reason0 = data == null;
+            boolean reason2 = length < Global.SHORT_SIZE + Global.BYTE_SIZE;
+            boolean reason3 = !versionMatch(Bits.readShort(data, offset), sender);
+            if (reason0 || reason2 || reason3) {
+                StringBuilder sb = new StringBuilder("TP: receive fail: ");
+                if (reason0) sb.append("data==null");
+                if (reason2) sb.append("short");
+                if (reason3) sb.append("version");
+                if (!reason0) {
+                    sb.append("; multicast = ").append((data[offset + Global.SHORT_SIZE] & MULTICAST) == MULTICAST);
+                }
+                sb.append(". offset ").append(offset).append(", length ").append(length);
+                if (sender instanceof IpAddress ipa) {
+                    sb.append(" from ").append(ipa.getIpAddress().getCanonicalHostName()).append(":").append(ipa.getPort());
+                }
+                sb.append(". Size: ").append(length).append(", offset: ").append(offset);
+                log.out(ccs_prop_receivefail.getLevel(), sb.toString());
+            }
+        }
+        // CCS end
         if(data == null) return;
 
         // drop message from self; it has already been looped back up (https://issues.redhat.com/browse/JGRP-1765)
@@ -1457,8 +1481,17 @@ public abstract class TP extends Protocol implements DiagnosticsHandler.ProbeHan
 
     protected void processBatch(MessageBatch batch, boolean oob) {
         try {
-            if(batch != null && !batch.isEmpty() && !unicastDestMismatch(batch.getDest()))
+        // CCS begin
+//            if(batch != null && !batch.isEmpty() && !unicastDestMismatch(batch.getDest()))
+//                msg_processing_policy.process(batch, oob);
+            if(batch != null && !batch.isEmpty() && !unicastDestMismatch(batch.getDest())) {
                 msg_processing_policy.process(batch, oob);
+            } else {
+                if (ccs_prop_receivefail.isLogEnabled(log)) {
+                    log.out(ccs_prop_receivefail.getLevel(), "TP: receive fail: empty batch or destination mismatch");
+                }
+            }
+        // CCS end
         }
         catch(Throwable t) {
             log.error("processing batch failed", t);

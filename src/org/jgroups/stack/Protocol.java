@@ -140,9 +140,17 @@ public abstract class Protocol implements Lifecycle {
 
     /**
      * Detect and log failure to send a datagram. Log level.
-     * Example: system.property.ccs.jg.sendfail=INFO
+     * Format: LEVEL.
+     * Suggested default: INFO
      */
     static public final CCSProperty ccs_prop_sendfail = CCSProperty.make("ccs.jg.sendfail");
+
+    /**
+     * Detect and log failure to convert received datagram into a message.
+     * Format: LEVEL.
+     * Suggested default: INFO
+     */
+    static public final CCSProperty ccs_prop_receivefail = CCSProperty.make("ccs.jg.receivefail");
 
     /**
      * Log messages received by TP. Log level for each type of NAKACK2 header.
