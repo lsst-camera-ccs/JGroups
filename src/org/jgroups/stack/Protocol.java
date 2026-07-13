@@ -84,7 +84,7 @@ public abstract class Protocol implements Lifecycle {
     
     /**
      * Interfere with message retransmission. 
-     * "suppress" - activate duplicate retransmit request suppression at NAKACK2 level (can be mapped to LEVEL to log every suppression)
+     * "suppress" - activate duplicate retransmit request suppression at NAKACK2 level (can be mapped to LEVEL to log suppression)
      * "suppress-bundler" - activate duplicate retransmit request suppression at bundler queue level (can be mapped to LEVEL to log every suppression)
      * "brief" - only log aggregate statistics on retransmissions (reduces number of logged messages).
      * Suggested default: suppress:FINE;suppress-bundler:FINE;brief;WARNING.
@@ -105,20 +105,23 @@ public abstract class Protocol implements Lifecycle {
     
     /**
      * Mitigate race condition between regular messages and HIGHEST_SEQNO.
+     * Suggested default: true.
+     * 
+     * Current algorithm: if this property is set, HIGHEST_SEQNO messages are not bundled with any previously submitted messages.
      */
     static public final CCSProperty ccs_prop_hseqno = CCSProperty.make("ccs.jg.hseqno");
     
     /**
      * Throttle message publication at int rate (MB/sec).
      * Format: [MB/sec];LEVEL
-     * Suggested default: 2;FINE.
+     * Suggested default: 2;FINEST. Currently not set.
      */
     static public final CCSProperty ccs_prop_throttle = CCSProperty.make("ccs.jg.throttle");
 
     /**
      * Message loss simulation. Double value [0,1] - portion of lost UDP packets.
      * Format: [double];LEVEL
-     * Suggested default: not set.
+     * Suggested default: not set. DEBUGGING USE ONLY.
      */
     static public final CCSProperty ccs_prop_debug_loss = CCSProperty.make("ccs.jg.debug.loss");
 
