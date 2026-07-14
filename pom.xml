@@ -12,7 +12,7 @@
     <artifactId>jgroups</artifactId>
     <packaging>jar</packaging>
     <name>JGroups</name>
-    <version>5.313.3</version>
+    <version>5.313.4-SNAPSHOT</version>
     <description>Reliable cluster communication toolkit (LSST CCS fork)</description>
     <url>http://www.jgroups.org</url>
 
@@ -42,7 +42,7 @@
         <url>https://github.com/lsst-camera-ccs/JGroups</url>
         <connection>scm:git:git://github.com/lsst-camera-ccs/JGroups.git</connection>
         <developerConnection>scm:git:https://${env.GIT_USERNAME}:${env.GIT_PASSWORD}@github.com/lsst-camera-ccs/JGroups.git</developerConnection>
-        <tag>jgroups-5.313.3</tag>
+        <tag>HEAD</tag>
     </scm>
 
     <ciManagement>
