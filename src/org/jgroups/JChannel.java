@@ -7,7 +7,6 @@ import org.jgroups.conf.ConfiguratorFactory;
 import org.jgroups.conf.ProtocolConfiguration;
 import org.jgroups.conf.ProtocolStackConfigurator;
 import org.jgroups.logging.Log;
-import org.jgroups.logging.LogFactory;
 import org.jgroups.protocols.TP;
 import org.jgroups.stack.*;
 import org.jgroups.util.*;
@@ -25,6 +24,8 @@ import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
+import org.jgroups.ccs.CCSLog;
+import org.jgroups.ccs.CCSProperty;
 
 /**
  * A channel represents a group communication endpoint (like a socket). An application joins a cluster by connecting
@@ -64,7 +65,13 @@ public class JChannel implements Closeable {
     protected ProtocolStack                         prot_stack;
     protected UpHandler                             up_handler;   // when set, all events are passed to the UpHandler
     protected Set<ChannelListener>                  channel_listeners;
-    protected final Log                             log=LogFactory.getLog(getClass());
+    // CCS begin
+//    protected final Log                             log=LogFactory.getLog(getClass());
+    protected final Log log = new CCSLog(this);
+    private final int timeMax = Protocol.ccs_prop_timing.getInt();
+    private volatile int maxSize, maxSizeVeto;
+    private volatile long maxSizeTime, maxSizeTimeVeto;
+    // CCS end
     protected List<AddressGenerator>                address_generators;
     protected final Promise<StateTransferResult>    state_promise=new Promise<>();
     protected boolean                               state_transfer_supported; // true if state transfer prot is in the stack
@@ -205,6 +212,25 @@ public class JChannel implements Closeable {
     public boolean       getDiscardOwnMessages()             {return discard_own_messages;}
     public JChannel      setDiscardOwnMessages(boolean flag) {discard_own_messages=flag; return this;}
 
+    // CCS begin
+    private void ccsInit(String cluster_name) {
+        
+        if ("STATUS".equals(cluster_name)) {
+            StringBuilder sb = new StringBuilder("JGroups CCS properties:").append(System.lineSeparator());
+            for (CCSProperty p : CCSProperty.getRegisteredProperties()) {
+                sb.append(p).append(System.lineSeparator());
+            }
+            log.info(sb.toString());
+        }
+        
+        maxSizeVeto = Protocol.ccs_prop_size.getInt("vetoSize");
+        maxSizeVeto = maxSizeVeto == Integer.MIN_VALUE ? 1000000 : maxSizeVeto * 1000000;
+        maxSizeTimeVeto = Protocol.ccs_prop_size.getInt("vetoTime");
+        maxSizeTimeVeto = maxSizeTimeVeto == Integer.MIN_VALUE ? 60000 : maxSizeTimeVeto * 1000;
+        maxSize = maxSizeVeto;
+        maxSizeTime = System.currentTimeMillis();
+    }
+    // CCS end
 
     @ManagedAttribute(name="address")
     public String getAddressAsString() {return local_addr != null? local_addr.toString() : "n/a";}
@@ -343,6 +369,9 @@ public class JChannel implements Closeable {
      */
     @ManagedOperation(description="Connects the channel to a group")
     public JChannel connect(String cluster_name) throws Exception {
+        // CCS begin
+        ccsInit(cluster_name);
+        // CCS end
         lock.lock();
         try {
             if(!_preConnect(cluster_name))
@@ -464,8 +493,38 @@ public class JChannel implements Closeable {
     public JChannel send(Message msg) throws Exception {
         if(msg == null)
             throw new NullPointerException("msg is null");
+        // CCS begin
+        long now = System.currentTimeMillis();
+        long time = timeMax > 0 ? now : 0L;
+        if (log.isEnabled(Protocol.ccs_prop_size.getLevel())) {
+            try {
+                int size = msg.getLength();
+                if (size > maxSize * 1.2) {
+                    log.out(Protocol.ccs_prop_size.getLevel(), "Large message is being sent: "+ size +" bytes. "+ msg);
+                    maxSize = size;
+                    maxSizeTime = now;
+                } else if (now > maxSizeTime + maxSizeTimeVeto) {
+                    maxSize = maxSizeVeto;
+                    maxSizeTime = now;
+                }
+            } catch (RuntimeException x) {
+                if (now > maxSizeTime + maxSizeTimeVeto) {
+                    log.out(Protocol.ccs_prop_size.getLevel(), "Unable to compute message size", x);
+                    maxSizeTime = now + 60000 + maxSizeTimeVeto;
+                }
+            }
+        }
+        // CCS end
         checkClosedOrNotConnected();
         down(msg);
+        // CCS begin
+        if (timeMax > 0) {
+            long delay = System.currentTimeMillis() - time;
+            if (delay > timeMax) {
+                log.out(Protocol.ccs_prop_timing.getLevel(), "JChannel.send took "+ delay +" ms. Content: "+ msg.getObject() +" of size "+ msg.size());
+            }
+        }
+        // CCS end
         return this;
     }
 
@@ -682,8 +741,22 @@ public class JChannel implements Closeable {
         if(up_handler != null)
             return up_handler.up(msg);
 
-        if(receiver != null)
-            receiver.receive(msg);
+        // CCS begin
+//        if(receiver != null)
+//            receiver.receive(msg);
+        if (receiver != null) {
+            if (timeMax > 0) {
+                long time = System.currentTimeMillis();
+                receiver.receive(msg);
+                long delay = System.currentTimeMillis() - time;
+                if (delay > timeMax) {
+                    log.out(Protocol.ccs_prop_timing.getLevel(), "JChannel.receive took " + delay + " ms. Content: " + msg.getObject() +" of size "+ msg.size());
+                }
+            } else {
+                receiver.receive(msg);
+            }
+        }
+        // CCS end
         return null;
     }
 

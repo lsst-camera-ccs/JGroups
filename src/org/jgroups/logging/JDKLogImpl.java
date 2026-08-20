@@ -179,6 +179,13 @@ public class JDKLogImpl implements Log {
     @Override
     public String getLevel() {
         Level level=logger.getLevel();
+        // CCS begin
+        Logger log = logger;
+        while (level == null && log != null) {
+            log = log.getParent();
+            level = log.getLevel();
+        }
+        // CCS end
         return level != null? level.toString() : "off";
     }
 
