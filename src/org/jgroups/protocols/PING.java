@@ -6,9 +6,16 @@ import org.jgroups.util.Responses;
 
 import java.io.InterruptedIOException;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.stream.Collectors;
 
 import static org.jgroups.Message.Flag.*;
 import static org.jgroups.Message.TransientFlag.DONT_LOOPBACK;
+import org.jgroups.ccs.CCSLog;
+import org.jgroups.ccs.CCSProperty;
+import org.jgroups.ccs.CCSUtil;
+import static org.jgroups.stack.Protocol.ccs_prop_connect;
+import static org.jgroups.stack.Protocol.ccs_prop_physical;
 
 
 /**
@@ -54,6 +61,24 @@ public class PING extends Discovery {
         Message msg=new BytesMessage(null).putHeader(getId(), hdr).setFlag(DONT_BUNDLE, OOB).setFlag(DONT_LOOPBACK);
         if(data != null)
             msg.setArray(marshal(data));
+        // CCS begin
+        Level level = CCSProperty.getMaxLevel(ccs_prop_physical, ccs_prop_connect);
+        if (log.isEnabled(level)) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("PING.sendDiscoveryRequest, initial: ").append(initial_discovery).append(", members: ").append(members_to_find).append(".");
+            sb.append(" Cluster: " ).append(cluster_name).append(".");
+                sb.append(" Sender: ").append(data.getLogicalName()).append(", Logical: ").append(CCSLog.toString(data.getAddress())).append(", Physical: ").append(CCSLog.toString(data.getPhysicalAddr()));
+                sb.append(", coord: ").append(data.isCoord()).append(", server: ").append(data.isServer()).append(".");
+                if (data.mbrs() != null) {
+                    sb.append(" Members: ").append(String.join(", ", data.mbrs().stream().map(m -> CCSLog.toString(m)).collect(Collectors.toList()))).append(".");
+                }
+            if (cluster_name == null || data.getLogicalName() == null || data.getAddress() == null || !CCSUtil.isValid(data.getPhysicalAddr())) {
+                log.warn(sb.toString());
+            } else {
+                log.out(level, sb.toString());
+            }
+        }
+        // CCS end
         sendMcastDiscoveryRequest(msg);
     }
 
