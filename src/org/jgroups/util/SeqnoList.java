@@ -180,7 +180,10 @@ public class SeqnoList extends FixedSizeBitSet implements SizeStreamable, Iterab
 
     protected int index(long seqno) {return (int)(seqno-offset);}
 
-    protected long seqno(int index) {return offset + index;}
+    // CCS begin
+    public long seqno(int index) {return offset + index;}
+//    protected long seqno(int index) {return offset + index;}
+    // CCS end
 
 
     protected class SeqnoListIterator implements Iterator<Long> {
@@ -199,6 +202,11 @@ public class SeqnoList extends FixedSizeBitSet implements SizeStreamable, Iterab
         }
 
         public void remove() { // not supported
+        // CCS begin
+            int prev_index = index-1;
+            if (prev_index < 0 || !get(prev_index)) throw new IllegalStateException("Cannot remove "+ seqno(prev_index) +" at "+ prev_index);
+            clear(prev_index);
+        // CCS end
         }
     }
 }
