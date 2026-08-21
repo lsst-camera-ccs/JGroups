@@ -14,7 +14,16 @@ import java.io.InterruptedIOException;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
+import org.jgroups.ccs.CCSLog;
+import org.jgroups.ccs.CCSUtil;
+import org.jgroups.protocols.pbcast.NakAckHeader2;
+import org.jgroups.stack.IpAddress;
+import static org.jgroups.stack.Protocol.ccs_prop_physical;
+import static org.jgroups.stack.Protocol.ccs_prop_receivefail;
+import static org.jgroups.stack.Protocol.ccs_prop_tp_receive;
 
 
 /**
@@ -47,6 +56,49 @@ public abstract class TP extends TPConfig implements DiagnosticsHandler.ProbeHan
     public static final    int     MSG_OVERHEAD=Global.SHORT_SIZE*2 + Global.BYTE_SIZE; // version + flags
     protected static final long    MIN_WAIT_BETWEEN_DISCOVERIES=TimeUnit.NANOSECONDS.convert(10, TimeUnit.SECONDS);  // ns
 
+    // CCS begin
+    private final ConcurrentHashMap<Address,ConcurrentHashMap<Long,Long>> requestedRetransmissions = new ConcurrentHashMap<>();
+    private volatile long requestedRetransmissionsLastClean;
+    private final long requestedRetransmissionsLife = 60000;
+    private boolean isRetransmission(Message msg) {
+        NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
+        if (hdr != null && msg.getSrc() != null) {
+            long seqno = hdr.getSeqno();
+            if (seqno > -1) {
+                ConcurrentHashMap<Long,Long> seqno2time = requestedRetransmissions.get(msg.getSrc());
+                if (seqno2time != null) {
+                    Long time = seqno2time.get(seqno);
+                    if (time != null && System.currentTimeMillis() - time < requestedRetransmissionsLife) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+    void addRequest(Address sender, long seqno) {
+        long now = System.currentTimeMillis();
+        ConcurrentHashMap<Long,Long> seqno2time = requestedRetransmissions.computeIfAbsent(sender, a -> new ConcurrentHashMap<Long,Long>());
+        seqno2time.put(seqno, now);
+        long dead = now - requestedRetransmissionsLife;
+        if (dead > requestedRetransmissionsLastClean) { // clean old entries
+            Iterator<ConcurrentHashMap<Long,Long>> it = requestedRetransmissions.values().iterator();
+            while (it.hasNext()) {
+                ConcurrentHashMap<Long,Long> ss = it.next();
+                Iterator<Long> itt = ss.values().iterator();
+                while (itt.hasNext()) {
+                    if (itt.next() < dead) {
+                        itt.remove();
+                    }
+                }
+                if (ss.isEmpty()) {
+                    it.remove();
+                }
+            }
+            requestedRetransmissionsLastClean = now;
+        }
+    }
+    // CCS end
 
     protected TP() {
     }
@@ -423,6 +475,20 @@ public abstract class TP extends TPConfig implements DiagnosticsHandler.ProbeHan
                 return;
             }
         }
+        // CCS begin
+        if (ccs_prop_tp_receive.isSet() && local_addr != null && !local_addr.equals(msg.getSrc())) {
+            NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
+            if (hdr != null) {
+                byte type = hdr.getType();
+                if (type == NakAckHeader2.MSG && isRetransmission(msg)) {
+                    type = NakAckHeader2.XMIT_RSP;
+                }
+                String sSeqNo = type == NakAckHeader2.XMIT_REQ ? Objects.toString(msg.getObject()) : Long.toString(hdr.getSeqno());
+                String sType = NakAckHeader2.type2Str(type);
+                log.out(Protocol.ccs_prop_tp_receive.getLevel(sType), "TP: received " + sType + " {" + sSeqNo + "} from " + CCSLog.toString(msg.getSrc()) +", size "+ msg.size());
+            }
+        }
+        // CCS end
         up_prot.up(msg);
     }
 
@@ -458,12 +524,64 @@ public abstract class TP extends TPConfig implements DiagnosticsHandler.ProbeHan
                 }
             }
         }
-        if(!batch.isEmpty())
+        // CCS begin
+//        if(!batch.isEmpty())
+//            up_prot.up(batch);
+        if(!batch.isEmpty()) {
+            if (ccs_prop_tp_receive.isSet() && local_addr != null && !local_addr.equals(batch.sender())) {
+                Object[] mmByType = new Object[5];
+                for (Message msg : batch) {
+                    NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
+                    if (hdr != null) {
+                        int type = hdr.getType();
+                        if (type == NakAckHeader2.MSG && isRetransmission(msg)) {
+                            type = NakAckHeader2.XMIT_RSP;
+                        } 
+                        ArrayList<String> mm = (ArrayList<String>) mmByType[type];
+                        if (mm == null) {
+                            mm = new ArrayList<>();
+                            mmByType[type] = mm;
+                        }
+                        mm.add(type == NakAckHeader2.XMIT_REQ ? Objects.toString(msg.getObject()) : Long.toString(hdr.getSeqno()));
+                    }
+                }
+                for (byte type = 1; type<5; type++) {
+                     ArrayList<String> mm = (ArrayList<String>) mmByType[type];
+                     if (mm != null) {
+                         String sType = NakAckHeader2.type2Str(type);
+                         log.out(Protocol.ccs_prop_tp_receive.getLevel(sType), "TP: received "+ sType +" {" + String.join(", ", mm) + "} from " + CCSLog.toString(batch.sender()));
+                     }
+                }
+            }
             up_prot.up(batch);
+        }
+        // CCS end
     }
 
     /** Subclasses must call this method when a unicast or multicast message has been received */
     public void receive(Address sender, byte[] data, int offset, int length) {
+        // CCS begin
+        if (ccs_prop_receivefail.isLogEnabled(log)) {
+            boolean reason0 = data == null;
+            boolean reason2 = length < Global.SHORT_SIZE + Global.BYTE_SIZE;
+            boolean reason3 = !versionMatch(Bits.readShort(data, offset), sender);
+            if (reason0 || reason2 || reason3) {
+                StringBuilder sb = new StringBuilder("TP: receive fail: ");
+                if (reason0) sb.append("data==null");
+                if (reason2) sb.append("short");
+                if (reason3) sb.append("version");
+                if (!reason0) {
+                    sb.append("; multicast = ").append((data[offset + Global.SHORT_SIZE] & MULTICAST) == MULTICAST);
+                }
+                sb.append(". offset ").append(offset).append(", length ").append(length);
+                if (sender instanceof IpAddress ipa) {
+                    sb.append(" from ").append(ipa.getIpAddress().getCanonicalHostName()).append(":").append(ipa.getPort());
+                }
+                sb.append(". Size: ").append(length).append(", offset: ").append(offset);
+                log.out(ccs_prop_receivefail.getLevel(), sb.toString());
+            }
+        }
+        // CCS end
         if(data == null) return;
 
         // drop message from self; it has already been looped back up (https://issues.redhat.com/browse/JGRP-1765)
@@ -563,8 +681,17 @@ public abstract class TP extends TPConfig implements DiagnosticsHandler.ProbeHan
 
     protected void processBatch(MessageBatch batch, boolean oob) {
         try {
-            if(batch != null && !batch.isEmpty() && !unicastDestMismatch(batch.getDest()))
+        // CCS begin
+//            if(batch != null && !batch.isEmpty() && !unicastDestMismatch(batch.getDest()))
+//                msg_processing_policy.process(batch, oob);
+            if(batch != null && !batch.isEmpty() && !unicastDestMismatch(batch.getDest())) {
                 msg_processing_policy.process(batch, oob);
+            } else {
+                if (ccs_prop_receivefail.isLogEnabled(log)) {
+                    log.out(ccs_prop_receivefail.getLevel(), "TP: receive fail: empty batch or destination mismatch");
+                }
+            }
+        // CCS end
         }
         catch(Throwable t) {
             log.error("processing batch failed", t);
@@ -620,6 +747,37 @@ public abstract class TP extends TPConfig implements DiagnosticsHandler.ProbeHan
                 responses.done();
             }
         }
+        // CCS begin
+        if (ccs_prop_physical.isSet()) {
+            if (logical_addr_cache != null && dest != null) {
+                int where = 0;
+                physical_dest = logical_addr_cache.get(dest);
+                if (physical_dest == null) {
+                    for (Map.Entry<Address,PhysicalAddress> e : logical_addr_cache.contents(false).entrySet()) {
+                        Address a = e.getKey();
+                        if (dest.equals(a)) {
+                            physical_dest = e.getValue();
+                            where = 1;
+                            break;
+                        } else if (dest.toString().equals(a.toString())) {
+                            log.warn("TP: stale cache, wanted "+ CCSLog.toString(dest) +", found "+ CCSLog.toString(a));
+                        }
+                    }
+                }
+                if (physical_dest == null) {
+                    LockSupport.parkNanos(10000);
+                    physical_dest = logical_addr_cache.get(dest);
+                    where = 2;
+                }
+                if (physical_dest == null) {
+                    log.warn("TP: failed sendTo "+ CCSLog.toString(dest));
+                } else {
+                    log.warn("TP: recovered sendTo "+ where +", logical "+ CCSLog.toString(dest) +", physical "+ CCSLog.toString(physical_dest));
+                    sendUnicast(physical_dest, buf, offset, length);
+                }
+            }
+        }
+        // CCS end
     }
 
     /** Fetches the physical addrs for all mbrs and sends the msg to each physical address. Asks discovery for missing
@@ -790,6 +948,11 @@ public abstract class TP extends TPConfig implements DiagnosticsHandler.ProbeHan
 
 
     protected boolean addPhysicalAddressToCache(Address logical_addr, PhysicalAddress physical_addr, boolean overwrite) {
+        // CCS begin
+        if (ccs_prop_physical.isSet() && !Objects.equals(local_addr, logical_addr)) {
+            log.out(ccs_prop_physical.getLevel(), "TP: adding physical address to cache: Logical: "+ CCSLog.toString(logical_addr) +", Physical: "+ CCSLog.toString(physical_addr));
+        }
+        // CCS end
         return logical_addr != null && physical_addr != null &&
           overwrite? logical_addr_cache.add(logical_addr, physical_addr) : logical_addr_cache.addIfAbsent(logical_addr, physical_addr);
     }

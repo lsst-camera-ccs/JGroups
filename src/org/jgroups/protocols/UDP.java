@@ -19,6 +19,10 @@ import java.net.*;
 import java.util.Formatter;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Level;
+import org.jgroups.ccs.CCSLog;
+import org.jgroups.ccs.MessageGate;
+import static org.jgroups.stack.Protocol.ccs_prop_physical;
 
 
 /**
@@ -137,6 +141,10 @@ public class UDP extends TP {
 
     protected static final boolean is_android, is_mac;
 
+    // CCS begin
+    private final MessageGate messageGate = new MessageGate(log);
+    boolean sendfail_reportSuccess;
+    // CCS end
 
     static  {
         is_android=Util.checkForAndroid();
@@ -253,6 +261,11 @@ public class UDP extends TP {
 
     @Override
     public void sendToAll(byte[] data, int offset, int length) throws Exception {
+        // CCS begin
+        if (!messageGate.process(length)) {
+            return;
+        }
+        // CCS end
         if(ip_mcast && mcast_addr != null) {
             if(local_transport != null) {
                 try {
@@ -278,7 +291,32 @@ public class UDP extends TP {
         // using the datagram socket to send multicasts or unicasts (https://issues.redhat.com/browse/JGRP-1765)
         if(sock != null) {
             try {
-                sock.send(packet);
+                // CCS begin
+//                sock.send(packet);
+                boolean checkTime = ccs_prop_timing.isLogEnabled(log);
+                long time = checkTime ? System.currentTimeMillis() : 0L;
+                if (ccs_prop_sendfail.isLogEnabled(log)) {
+                    try {
+                        sock.send(packet);
+                        if (sendfail_reportSuccess) {
+                            sendfail_reportSuccess = false;
+                            log.out(ccs_prop_sendfail.getLevel(), "UDP: sent to "+ dest +":"+ port +", size "+ length +", offset "+ offset);
+                        }
+                    } catch (IOException | RuntimeException x) {
+                        log.out(ccs_prop_sendfail.getLevel(), "UDP: Failed sending on "+ sock +", size "+ length, x);
+                        checkTime = false;
+                        throw x;
+                    }
+                } else {
+                    sock.send(packet);
+                }
+                if (checkTime) {
+                    long delay = System.currentTimeMillis() - time;
+                    if (delay > ccs_prop_timing.getInt()) {
+                        log.out(ccs_prop_timing.getLevel(), "UDP: socket.send(packet) took " + delay + " ms.");
+                    }
+                }
+                // CCS end
             }
             catch(IOException ex) {
                 if(suppress_log_out_of_buffer_space != null)
@@ -483,14 +521,35 @@ public class UDP extends TP {
 
 
     protected IpAddress createLocalAddress() {
-        if(sock == null || sock.isClosed())
+        // CCS begin
+        Level level = ccs_prop_physical.getLevel();
+        
+        if (sock == null || sock.isClosed()) {
+            log.out(level, "Trying to create physical address of null or closed socket %s", sock);
             return null;
-        if(external_addr != null) {
-            if(external_port > 0)
+        }
+        if (external_addr != null) {
+            if (external_port > 0) {
                 return new IpAddress(external_addr, external_port);
+            }
             return new IpAddress(external_addr, sock.getLocalPort());
         }
-        return new IpAddress(sock.getLocalAddress(), sock.getLocalPort());
+        IpAddress out = new IpAddress(sock.getLocalAddress(), sock.getLocalPort());
+        if (log.isEnabled(level)) {
+            log.out(level, "Created physical address: "+ CCSLog.toString(out));
+        }
+        return out;
+
+//        if(sock == null || sock.isClosed())
+//            return null;
+//        if(external_addr != null) {
+//            if(external_port > 0)
+//                return new IpAddress(external_addr, external_port);
+//            return new IpAddress(external_addr, sock.getLocalPort());
+//        }
+//        return new IpAddress(sock.getLocalAddress(), sock.getLocalPort());
+
+        // CCS end
     }
 
     protected <T extends UDP> T setTimeToLive(int ttl, MulticastSocket s) {
