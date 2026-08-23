@@ -48,9 +48,7 @@ public class CCSUtil {
         };
     }
     
-    /**
-     * Returns seqno of outgoing retransmission, or -1.
-     */
+    /** Returns seqno of outgoing retransmission, or -1. */
     static public long getRetransmissionSeqNo(Message msg) {
         if (msg == null) return -1;
         NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);

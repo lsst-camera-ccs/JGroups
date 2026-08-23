@@ -56,31 +56,28 @@ public abstract class TP extends TPConfig implements DiagnosticsHandler.ProbeHan
     public static final    int     MSG_OVERHEAD=Global.SHORT_SIZE*2 + Global.BYTE_SIZE; // version + flags
     protected static final long    MIN_WAIT_BETWEEN_DISCOVERIES=TimeUnit.NANOSECONDS.convert(10, TimeUnit.SECONDS);  // ns
 
-    // CCS begin
-    private final ConcurrentHashMap<Address,ConcurrentHashMap<Long,Long>> requestedRetransmissions = new ConcurrentHashMap<>();
-    private volatile long requestedRetransmissionsLastClean;
-    private final long requestedRetransmissionsLife = 60000;
+    // CCS begin : machinery for identifying received messages as retransmissions in response to our requests (logging only)
+    private final ConcurrentHashMap<Address,ConcurrentHashMap<Long,Long>> requestedRetransmissions = new ConcurrentHashMap<>(); // source -> {seqno -> time of request}
+    private volatile long requestedRetransmissionsLastClean; // last time old entries were removed (ms)
+    private final long requestedRetransmissionsLIFE = 60000; // entries older than that can be removed (ms)
+    /* Identify retransmissions. */
     private boolean isRetransmission(Message msg) {
         NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
         if (hdr != null && msg.getSrc() != null) {
             long seqno = hdr.getSeqno();
             if (seqno > -1) {
                 ConcurrentHashMap<Long,Long> seqno2time = requestedRetransmissions.get(msg.getSrc());
-                if (seqno2time != null) {
-                    Long time = seqno2time.get(seqno);
-                    if (time != null && System.currentTimeMillis() - time < requestedRetransmissionsLife) {
-                        return true;
-                    }
-                }
+                return seqno2time != null && seqno2time.get(seqno) != null;
             }
         }
         return false;
     }
+    /* Add retransmission request and clean the map if more than {@code requestedRetransmissionsLIFE} has passed since {@code requestedRetransmissionsLastClean}. */
     void addRequest(Address sender, long seqno) {
         long now = System.currentTimeMillis();
         ConcurrentHashMap<Long,Long> seqno2time = requestedRetransmissions.computeIfAbsent(sender, a -> new ConcurrentHashMap<Long,Long>());
         seqno2time.put(seqno, now);
-        long dead = now - requestedRetransmissionsLife;
+        long dead = now - requestedRetransmissionsLIFE;
         if (dead > requestedRetransmissionsLastClean) { // clean old entries
             Iterator<ConcurrentHashMap<Long,Long>> it = requestedRetransmissions.values().iterator();
             while (it.hasNext()) {

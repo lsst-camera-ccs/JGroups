@@ -1,5 +1,6 @@
 package org.jgroups.protocols;
 
+import java.util.Iterator;
 import org.jgroups.Message;
 import org.jgroups.annotations.ManagedAttribute;
 import org.jgroups.conf.AttributeType;
@@ -8,7 +9,13 @@ import org.jgroups.util.ConcurrentLinkedBlockingQueue;
 import org.jgroups.util.FastArray;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.BlockingQueue;
+import java.util.logging.Level;
+import org.jgroups.ccs.CCSLog;
+import org.jgroups.ccs.CCSUtil;
+import org.jgroups.protocols.pbcast.NakAckHeader2;
+import org.jgroups.stack.Protocol;
 
 /**
  * This bundler adds all (unicast or multicast) messages to a queue until max size has been exceeded, but does send
@@ -94,8 +101,66 @@ public class TransferQueueBundler extends BaseBundler implements Runnable {
     public void send(Message msg) throws Exception {
         if(!running)
             return;
-        if(!queue.offer(msg))
+
+        // CCS begin
+//        if(!queue.offer(msg))
+//            num_drops_on_full_queue.increment();
+
+        // Suppress retransmissions already in queue
+
+        boolean filter = Protocol.ccs_prop_retransmit.getBoolean("suppress-bundler");
+        long seqno = -1;
+        long now = -1;
+        if (filter) {
+            now = System.currentTimeMillis();
+            long old = now - retransmissionsInQueueLIFE;
+            if (retransmissionsInQueueLastClean < old) { // remove old entries
+                retransmissionsInQueueLastClean = now;
+                Iterator<Map.Entry<Long, Long>> it = retransmissionsInQueue.entrySet().iterator();
+                while (it.hasNext()) {
+                    Map.Entry<Long, Long> e = it.next();
+                    if (e.getValue() < old) {
+                        it.remove();
+                    }
+                }
+            }
+            NakAckHeader2 hdr = CCSUtil.getHeader(msg, NakAckHeader2.class);
+            if (hdr != null && msg.getDest() == null
+                    && (hdr.getType() == NakAckHeader2.XMIT_RSP || (hdr.getType() == NakAckHeader2.MSG && msg.isFlagSet(Message.TransientFlag.DONT_BLOCK)))) {
+                seqno = hdr.getSeqno();
+                Long prev = retransmissionsInQueue.get(seqno);
+                if (prev != null && now - prev <= retransmissionsInQueueLIFE) {
+                    Level level = Protocol.ccs_prop_retransmit.getLevel("suppress-bundler");
+                    if (log.isEnabled(level)) {
+                        log.out(level, "Bundler: supressing retransmission " + seqno);
+                    }
+                    return; // dropping retransmission
+                }
+            }
+        }
+        
+        // Try putting it into queue
+        
+        if (queue.offer(msg)) {
+            if (seqno > -1) { // retransmission goes into bundle queue - add it to retransmissionsInQueue
+                retransmissionsInQueue.put(seqno, now);
+            }
+            if (Protocol.ccs_prop_bundler_in.isSet()) {
+                byte type = CCSUtil.getNakack2Type(msg);
+                if (type > 0 && log.isEnabled(ccs_prop_bundler_in_level[type])) {
+                    log.out(ccs_prop_bundler_in_level[type], "Bundler: in " + CCSLog.toSeqNoString(msg) + ".");
+                }
+            }
+        } else {
             num_drops_on_full_queue.increment();
+            if (Protocol.ccs_prop_bundler_in.isSet()) {
+                byte type = CCSUtil.getNakack2Type(msg);
+                if (type > 0 && log.isEnabled(ccs_prop_bundler_in_level[type])) {
+                    log.out(ccs_prop_bundler_in_level[type], "Bundler: dropped " + CCSLog.toSeqNoString(msg) + ".");
+                }
+            }
+        }
+        // CCS end
     }
 
     public void run() {
@@ -128,7 +193,10 @@ public class TransferQueueBundler extends BaseBundler implements Runnable {
 
     protected void addAndSendIfSizeExceeded(Message msg) {
         int size=msg.size();
-        if(count + size > max_size) {
+        // CCS begin : do not bundle HIGHEST_SEQNO with previously submitted messages
+//        if(count + size > max_size) {
+        if(count + size > max_size || (CCSUtil.getNakack2Type(msg) == NakAckHeader2.HIGHEST_SEQNO && Protocol.ccs_prop_hseqno.isSet())) {
+        // CCS end
             if(transport.statsEnabled())
                 avg_fill_count.add(count);
             sendBundledMessages();
