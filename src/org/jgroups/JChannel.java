@@ -68,7 +68,7 @@ public class JChannel implements Closeable {
     // CCS begin
 //    protected final Log                             log=LogFactory.getLog(getClass());
     protected final Log log = new CCSLog(this);
-    private final int timeMax = Protocol.ccs_prop_timing.getInt();
+    private volatile int timeMax = Protocol.ccs_prop_timing.getInt();
     private volatile int maxSize, maxSizeVeto;
     private volatile long maxSizeTime, maxSizeTimeVeto;
     // CCS end
@@ -223,12 +223,16 @@ public class JChannel implements Closeable {
             log.info(sb.toString());
         }
         
-        maxSizeVeto = Protocol.ccs_prop_size.getInt("vetoSize");
-        maxSizeVeto = maxSizeVeto == Integer.MIN_VALUE ? 1000000 : maxSizeVeto * 1000000;
-        maxSizeTimeVeto = Protocol.ccs_prop_size.getInt("vetoTime");
-        maxSizeTimeVeto = maxSizeTimeVeto == Integer.MIN_VALUE ? 60000 : maxSizeTimeVeto * 1000;
-        maxSize = maxSizeVeto;
-        maxSizeTime = System.currentTimeMillis();
+        Protocol.ccs_prop_timing.addAndCallListener(p -> timeMax = p.getInt());
+        
+        Protocol.ccs_prop_size.addAndCallListener(p -> {
+            maxSizeVeto = p.getInt("vetoSize");
+            maxSizeVeto = maxSizeVeto == Integer.MIN_VALUE ? 1000000 : maxSizeVeto * 1000000;
+            maxSizeTimeVeto = p.getInt("vetoTime");
+            maxSizeTimeVeto = maxSizeTimeVeto == Integer.MIN_VALUE ? 60000 : maxSizeTimeVeto * 1000;
+            maxSize = maxSizeVeto;
+            maxSizeTime = System.currentTimeMillis();
+        });
     }
     // CCS end
 

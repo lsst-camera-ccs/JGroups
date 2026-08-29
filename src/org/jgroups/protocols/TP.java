@@ -21,10 +21,6 @@ import org.jgroups.ccs.CCSLog;
 import org.jgroups.ccs.CCSUtil;
 import org.jgroups.protocols.pbcast.NakAckHeader2;
 import org.jgroups.stack.IpAddress;
-import static org.jgroups.stack.Protocol.ccs_prop_physical;
-import static org.jgroups.stack.Protocol.ccs_prop_receivefail;
-import static org.jgroups.stack.Protocol.ccs_prop_tp_receive;
-
 
 /**
  * Generic transport - specific implementations should extend this class.

@@ -14,9 +14,6 @@ import static org.jgroups.Message.TransientFlag.DONT_LOOPBACK;
 import org.jgroups.ccs.CCSLog;
 import org.jgroups.ccs.CCSProperty;
 import org.jgroups.ccs.CCSUtil;
-import static org.jgroups.stack.Protocol.ccs_prop_connect;
-import static org.jgroups.stack.Protocol.ccs_prop_physical;
-
 
 /**
  * The PING protocol retrieves the initial membership by mcasting a discovery request (via the multicast capable

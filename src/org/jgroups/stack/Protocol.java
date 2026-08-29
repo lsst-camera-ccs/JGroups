@@ -75,13 +75,13 @@ public abstract class Protocol implements Lifecycle {
     /**
      * If set, enhancements aimed at preventing "missing physical address" problem are activated,
      * and diagnostic logging is done at the specified level.
-     * Example: system.property.ccs.jg.physical=FINE.
+     * Suggested default: FINE.
      */
     static public final CCSProperty ccs_prop_physical = CCSProperty.make("ccs.jg.physical");
     
     /**
      * If set, diagnostic logging related to the initial connection is done at the specified level.
-     * Example: system.property.ccs.jg.connect=FINE.
+     * Suggested default: FINE.
      */
     static public final CCSProperty ccs_prop_connect = CCSProperty.make("ccs.jg.connect");
     
@@ -90,6 +90,7 @@ public abstract class Protocol implements Lifecycle {
      * "suppress" - activate duplicate retransmit request suppression at NAKACK2 level (can be mapped to LEVEL to log suppression)
      * "suppress-bundler" - activate duplicate retransmit request suppression at bundler queue level (can be mapped to LEVEL to log every suppression)
      * "brief" - only log aggregate statistics on retransmissions (reduces number of logged messages).
+     * Unnamed level - logging unsuppressed retransmissions.
      * Suggested default: suppress:FINE;suppress-bundler:FINE;brief;WARNING.
      * 
      * Algorithms:
@@ -98,9 +99,9 @@ public abstract class Protocol implements Lifecycle {
      * <li>{@code NAKACK2.handleXmitReq(...)} suppresses retransmission of messages that were retransmitted less than {@code xmit_interval/2} ago.
      * </ul>
      * "suppress-bundler":<ul>
-     * <li>{@code TransferQueueBundler.retransmissionsInQueue} maintains a map of seqno to entry time for retransmissions in the bundler queue.
-     * <li>Entries older than {@code TransferQueueBundler.MAX_RETRANSMISSION_HOLD} (10 seconds) are removed from that map.
-     * <li>On entry to bundler queue, messages are dropped if their seqnos are already mapped to a moment less than {@code MAX_RETRANSMISSION_HOLD} in the past.
+     * <li>{@code BaseBundler.retransmissionsInQueue} maintains a map of seqno to entry time for retransmissions in the bundler queue.
+     * <li>Entries older than {@code BaseBundler.retransmissionsInQueueLIFE} (10 seconds) are removed from that map.
+     * <li>On entry to bundler queue, messages are dropped if their seqnos are already mapped to a moment less than {@code retransmissionsInQueueLIFE} in the past.
      * <li>On exit from bundler queue, seqnos are removed from the set of queued retransmissions.
      * </ul>
      */
@@ -132,6 +133,11 @@ public abstract class Protocol implements Lifecycle {
      * Detect and log unusual timing of message processing. Integer value - threshold in milliseconds.
      * Format: [ms];LEVEL
      * Suggested default: not set.
+     * 
+     * Currently monitored:<ul>
+     * <li>JChannel.send(...)
+     * <li>JChannel serving a received message to CCS.
+     * <li>java.net.MulticastSocket.send(...).</ul>
      */
     static public final CCSProperty ccs_prop_timing = CCSProperty.make("ccs.jg.timing");
 

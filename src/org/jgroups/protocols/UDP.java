@@ -22,8 +22,6 @@ import java.util.Map;
 import java.util.logging.Level;
 import org.jgroups.ccs.CCSLog;
 import org.jgroups.ccs.MessageGate;
-import static org.jgroups.stack.Protocol.ccs_prop_physical;
-
 
 /**
  * IP multicast transport based on UDP. Messages to the group (msg.dest == null)
