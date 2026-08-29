@@ -22,6 +22,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
+import java.util.logging.Level;
 import java.util.stream.Collectors;
 
 import static org.jgroups.Message.Flag.*;
@@ -644,11 +645,25 @@ public class GMS extends Protocol implements DiagnosticsHandler.ProbeHandler {
                     setDigest(digest);
             }
 
-            if(log.isDebugEnabled()) {
-                Address[][] diff=View.diff(view, new_view);
+            // CCS begin
+//            if(log.isDebugEnabled()) {
+//                Address[][] diff=View.diff(view, new_view);
+//                log.debug("%s: installing view %s %s", local_addr, new_view,
+//                          print_view_details? View.printDiff(diff) : "");
+//            }
+            if (ccs_prop_member.isSet()) {
+                boolean isNewCoord = Objects.equals(local_addr, new_view.getCoord());
+                Level level = isNewCoord ? ccs_prop_member.getLevel("coordinator") : ccs_prop_member.getLevel();
+                if (log.isEnabled(level)) {
+                    Address[][] diff = View.diff(view, new_view);
+                    log.out(level, "GMS: Installing view %s %s", new_view, View.printDiff(diff));
+                }
+            } else if (log.isDebugEnabled()) {
+                Address[][] diff = View.diff(view, new_view);
                 log.debug("%s: installing view %s %s", local_addr, new_view,
-                          print_view_details? View.printDiff(diff) : "");
+                          print_view_details ? View.printDiff(diff) : "");
             }
+            // CCS end
 
             boolean was_coord=view != null && Objects.equals(local_addr, view.getCoord());
             view=new_view;

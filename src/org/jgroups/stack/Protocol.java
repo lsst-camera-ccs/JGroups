@@ -185,6 +185,14 @@ public abstract class Protocol implements Lifecycle {
      */
     static public final CCSProperty ccs_prop_bundler_out = CCSProperty.make("ccs.jg.bundler.out");
 
+    /**
+     * Log membership changes.
+     * Format: coordinator:LEVEL;LEVEL.
+     * Suggested default: coordinator:INFO.
+     * Logger: org.jgroups.protocols.pbcast.GMS.
+     */
+    static public final CCSProperty ccs_prop_member = CCSProperty.make("ccs.jg.member");
+
     protected final Log            log = new CCSLog(this);
 //    protected final Log            log=LogFactory.getLog(this.getClass());
 
