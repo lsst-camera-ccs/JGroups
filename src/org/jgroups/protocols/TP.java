@@ -681,7 +681,7 @@ public abstract class TP extends TPConfig implements DiagnosticsHandler.ProbeHan
                 msg_processing_policy.process(batch, oob);
             } else {
                 if (ccs_prop_receivefail.isLogEnabled(log)) {
-                    log.out(ccs_prop_receivefail.getLevel(), "TP: receive fail: empty batch or destination mismatch");
+                    log.out(ccs_prop_receivefail.getLevel(), "TP: receive fail: empty batch ("+  (batch == null ? "null" : batch.isEmpty()) +") or destination mismatch ("+ (batch == null ? "null" : batch.getDest()) +").");
                 }
             }
         // CCS end
