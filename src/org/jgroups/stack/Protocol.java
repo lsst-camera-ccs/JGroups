@@ -76,22 +76,27 @@ public abstract class Protocol implements Lifecycle {
      * If set, enhancements aimed at preventing "missing physical address" problem are activated,
      * and diagnostic logging is done at the specified level.
      * Suggested default: FINE.
+     * Loggers: org.jgroups.protocols.Discovery, org.jgroups.protocols.PING, org.jgroups.protocols.UDP.
      */
     static public final CCSProperty ccs_prop_physical = CCSProperty.make("ccs.jg.physical");
     
     /**
      * If set, diagnostic logging related to the initial connection is done at the specified level.
      * Suggested default: FINE.
+     * Loggers: org.jgroups.protocols.Discovery, org.jgroups.protocols.PING.
      */
     static public final CCSProperty ccs_prop_connect = CCSProperty.make("ccs.jg.connect");
     
     /**
-     * Interfere with message retransmission. 
-     * "suppress" - activate duplicate retransmit request suppression at NAKACK2 level (can be mapped to LEVEL to log suppression)
-     * "suppress-bundler" - activate duplicate retransmit request suppression at bundler queue level (can be mapped to LEVEL to log every suppression)
-     * "brief" - only log aggregate statistics on retransmissions (reduces number of logged messages).
-     * Unnamed level - logging unsuppressed retransmissions.
+     * Interfere with message retransmission.
+     * <ul>
+     * <li>suppress - activate duplicate retransmit request suppression at NAKACK2; can be mapped to LEVEL to log suppression
+     * <li>suppress-bundler - activate duplicate retransmit request suppression at bundler queue; can be mapped to LEVEL to log suppression
+     * <li>brief:int N - only log aggregate statistics on retransmissions (reduces number of logged messages) every N ms.
+     * <li>Unnamed LEVEL - logging unsuppressed retransmissions.
+     * </ul>
      * Suggested default: suppress:FINE;suppress-bundler:FINE;brief;WARNING.
+     * Loggers: org.jgroups.protocols.pbcast.NAKACK2, org.jgroups.protocols.UDP.
      * 
      * Algorithms:
      * "suppress":<ul>
@@ -110,6 +115,7 @@ public abstract class Protocol implements Lifecycle {
     /**
      * Mitigate race condition between regular messages and HIGHEST_SEQNO.
      * Suggested default: true.
+     * Loggers: org.jgroups.protocols.UDP.
      * 
      * Current algorithm: if this property is set, HIGHEST_SEQNO messages are not bundled with any previously submitted messages.
      */
@@ -118,21 +124,16 @@ public abstract class Protocol implements Lifecycle {
     /**
      * Throttle message publication at int rate (MB/sec).
      * Format: [MB/sec];LEVEL
-     * Suggested default: 2;FINEST. Currently not set.
+     * Suggested default: 2;FINEST.
+     * Loggers: org.jgroups.protocols.UDP.
      */
     static public final CCSProperty ccs_prop_throttle = CCSProperty.make("ccs.jg.throttle");
-
-    /**
-     * Message loss simulation. Double value [0,1] - portion of lost UDP packets.
-     * Format: [double];LEVEL
-     * Suggested default: not set. DEBUGGING USE ONLY.
-     */
-    static public final CCSProperty ccs_prop_debug_loss = CCSProperty.make("ccs.jg.debug.loss");
 
     /**
      * Detect and log unusual timing of message processing. Integer value - threshold in milliseconds.
      * Format: [ms];LEVEL
      * Suggested default: not set.
+     * Loggers: org.jgroups.protocols.UDP, org.jgroups.JChannel.
      * 
      * Currently monitored:<ul>
      * <li>JChannel.send(...)
@@ -147,6 +148,7 @@ public abstract class Protocol implements Lifecycle {
      * int vetoTime - seconds, reset previous size after this time; default .
      * Format: vetoSize:[MB];vetoTime:[seconds];LEVEL
      * Suggested default: vetoSize:1;vetoTime:60;INFO
+     * Loggers: org.jgroups.JChannel.
      */
     static public final CCSProperty ccs_prop_size = CCSProperty.make("ccs.jg.size");
 
@@ -154,6 +156,7 @@ public abstract class Protocol implements Lifecycle {
      * Detect and log failure to send a datagram. Log level.
      * Format: LEVEL.
      * Suggested default: INFO
+     * Loggers: org.jgroups.protocols.UDP.
      */
     static public final CCSProperty ccs_prop_sendfail = CCSProperty.make("ccs.jg.sendfail");
 
@@ -161,6 +164,7 @@ public abstract class Protocol implements Lifecycle {
      * Detect and log failure to convert received datagram into a message.
      * Format: LEVEL.
      * Suggested default: INFO
+     * Loggers: org.jgroups.protocols.UDP.
      */
     static public final CCSProperty ccs_prop_receivefail = CCSProperty.make("ccs.jg.receivefail");
 
@@ -168,20 +172,29 @@ public abstract class Protocol implements Lifecycle {
      * Log messages received by TP. Log level for each type of NAKACK2 header.
      * Format: LEVEL;MSG;XMIT_REQ:LEVEL;XMIT_RSP:LEVEL;HIGHEST_SEQNO:LEVEL.
      * Suggested default: not set.
+     * Loggers: org.jgroups.protocols.UDP.
      */
     static public final CCSProperty ccs_prop_tp_receive = CCSProperty.make("ccs.jg.tp.receive");
 
     /**
-     * Log sent messages on entry to the bundler queue selectively by NACKACK2 header type.
+     * Log sent messages on entry to the bundler queue selectively by NAKACK2 header type.
      * Format: LEVEL;MSG;XMIT_REQ:LEVEL;XMIT_RSP:LEVEL;HIGHEST_SEQNO:LEVEL;fail:LEVEL;int:ms.
      * Suggested default: not set.
+     * Loggers: org.jgroups.protocols.UDP.
      */
     static public final CCSProperty ccs_prop_bundler_in = CCSProperty.make("ccs.jg.bundler.in");
 
     /**
-     * Log sent messages on exit from the bundler queue selectively by NACKACK2 header type.
-     * Format: LEVEL;MSG;XMIT_REQ:LEVEL;XMIT_RSP:LEVEL;HIGHEST_SEQNO:LEVEL;fail:LEVEL;int:ms.
+     * Log sent messages on exit from the bundler queue selectively by NAKACK2 header type.
+     * Format: LEVEL;MSG;XMIT_REQ:LEVEL;XMIT_RSP:LEVEL;HIGHEST_SEQNO:LEVEL;fail:LEVEL;int.
+     * <ul>
+     * <li>Unnamed LEVEL - default logging level.
+     * <li>[MSG|XMIT_REQ|XMIT_RSP|HIGHEST_SEQNO]:LEVEL - logging level for a specific NAKACK2 header type
+     * <li>fail:LEVEL - logging level for failure to send
+     * <li>Unnamed int N - log if sending takes more than N ms
+     * </ul>
      * Suggested default: not set.
+     * Loggers: org.jgroups.protocols.UDP.
      */
     static public final CCSProperty ccs_prop_bundler_out = CCSProperty.make("ccs.jg.bundler.out");
 
@@ -192,6 +205,14 @@ public abstract class Protocol implements Lifecycle {
      * Logger: org.jgroups.protocols.pbcast.GMS.
      */
     static public final CCSProperty ccs_prop_member = CCSProperty.make("ccs.jg.member");
+
+    /**
+     * Message loss simulation. Double value [0,1] - portion of lost UDP packets.
+     * Format: [double];LEVEL
+     * Suggested default: not set. DEBUGGING USE ONLY.
+     * Loggers: org.jgroups.protocols.UDP.
+     */
+    static public final CCSProperty ccs_prop_debug_loss = CCSProperty.make("ccs.jg.debug.loss");
 
     protected final Log            log = new CCSLog(this);
 //    protected final Log            log=LogFactory.getLog(this.getClass());

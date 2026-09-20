@@ -260,7 +260,6 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
     private final Map<Long,Long> xmit_prev = new ConcurrentHashMap<>(); // seqno -> millis time of last retransmission
     private final Map<String,AtomicIntegerArray> brief = new ConcurrentHashMap<>(); // requester -> number of requests
     private volatile long briefLastRun;
-    private final long BRIEF_PERIOD = 10000;
     private void logRetransmitRequest(Iterable<Long> accept, Iterable<Long> suppress, String requester) {
         if (requester == null || (accept == null && suppress == null)) return;
         Level level = ccs_prop_retransmit.getLevel();
@@ -1518,11 +1517,12 @@ public class NAKACK2 extends Protocol implements DiagnosticsHandler.ProbeHandler
                 }
             }
         }
-        if ((now - briefLastRun > BRIEF_PERIOD) && !brief.isEmpty()) { // what follows is not strictly thread-safe but fast and acceptable
+        int briefPeriod = ccs_prop_retransmit.getInt("brief", 10000);
+        if ((now - briefLastRun > briefPeriod) && !brief.isEmpty()) { // what follows is not strictly thread-safe but fast and acceptable
             briefLastRun = now;
             TreeMap<String, AtomicIntegerArray> briefCopy = new TreeMap<>(brief);
             brief.clear();
-            StringBuilder sb = new StringBuilder("NAKACK2: Retransmission requests in the last ").append(BRIEF_PERIOD / 1000).append(" seconds:").append(System.lineSeparator());
+            StringBuilder sb = new StringBuilder("NAKACK2: Retransmission requests in the last ").append(briefPeriod / 1000).append(" seconds:").append(System.lineSeparator());
             briefCopy.forEach((agent, n) -> {
                 sb.append(agent).append(" accepted ").append(n.get(0)).append(" / suppressed ").append(n.get(1)).append(System.lineSeparator());
             });

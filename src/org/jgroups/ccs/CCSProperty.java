@@ -319,7 +319,18 @@ public class CCSProperty {
      * @return Value as a String, or {@code null} if there is no such key.
      */
     public String getString(String key) {
-        return data == null ? null : data.get(key);
+        return getString(key, null);
+    }
+    
+    /**
+     * Returns String value associated with the specified key.
+     * @param key Key.
+     * @param defaultValue Default value.
+     * @return Value as a String, or {@code defaultValue} if there is no such key.
+     */
+    public String getString(String key, String defaultValue) {
+        String out = data == null ? null : data.get(key);
+        return out == null ? defaultValue : null;
     }
     
     /**
@@ -328,10 +339,20 @@ public class CCSProperty {
      * @return Value as a double, or {@code Double.NaN} if there is no such key, or the value cannot be converted to double.
      */
     public double getDouble(String key) {
+        return getDouble(key, Double.NaN);
+    }
+    
+    /**
+     * Returns double value associated with the specified key.
+     * @param key Key.
+     * @param defaultValue Default value.
+     * @return Value as a double, or {@code defaultValue} if there is no such key, or the value cannot be converted to double.
+     */
+    public double getDouble(String key, double defaultValue) {
         try {
             return Double.parseDouble(data.get(key));
         } catch (RuntimeException x) {
-            return Double.NaN;
+            return defaultValue;
         }
     }
     
@@ -345,16 +366,37 @@ public class CCSProperty {
     }
     
     /**
+     * Returns the double value not associated with any key.
+     * @param defaultValue Default value.
+     * @return Double value, or {@code defaultValue} if there is no value that is not
+     *         associated with any key and that can be converted to double.
+     */
+    public double getDouble(double defaultValue) {
+        return doubleValue == Double.NaN ? defaultValue : doubleValue;
+    }
+    
+    /**
      * Returns {@code int} value associated with the specified key.
      * @param key Key.
      * @return Value as an {@code int}, or {@code Integer.MIN_VALUE} if there is no such key,
      *         or the value cannot be converted to int.
      */
     public int getInt(String key) {
+        return getInt(key, Integer.MIN_VALUE);
+    }
+    
+    /**
+     * Returns {@code int} value associated with the specified key.
+     * @param key Key.
+     * @param defaultValue Default value.
+     * @return Value as an {@code int}, or {@code defaultValue} if there is no such key,
+     *         or the value cannot be converted to int.
+     */
+    public int getInt(String key, int defaultValue) {
         try {
             return Integer.parseInt(data.get(key));
         } catch (RuntimeException x) {
-            return Integer.MIN_VALUE;
+            return defaultValue;
         }
     }
     
@@ -365,6 +407,16 @@ public class CCSProperty {
      */
     public int getInt() {
         return intValue;
+    }
+    
+    /**
+     * Returns the {@code int} value not associated with any key.
+     * @param defaultValue Default value.
+     * @return int value, or {@code defaultValue} if there is no value that is not
+     *         associated with any key and that can be converted to double.
+     */
+    public int getInt(int defaultValue) {
+        return intValue == Integer.MIN_VALUE ? defaultValue : intValue;
     }
     
     /**

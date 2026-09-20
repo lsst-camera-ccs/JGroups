@@ -224,6 +224,7 @@ public abstract class BaseBundler implements Bundler {
             } else {
                 ccs_prop_bundler_out_level = out;
             }
+            log.info("TP: processing CCS property "+ p.getName() +": "+ p.toString());
         };
         Protocol.ccs_prop_bundler_in.addListener(ccs_prop_bundler_listener);
         ccs_prop_bundler_listener.changed(Protocol.ccs_prop_bundler_in);

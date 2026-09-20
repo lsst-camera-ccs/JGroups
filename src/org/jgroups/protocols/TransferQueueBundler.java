@@ -11,8 +11,13 @@ import org.jgroups.util.FastArray;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import org.jgroups.ccs.CCSLog;
+import org.jgroups.ccs.CCSProperty;
 import org.jgroups.ccs.CCSUtil;
 import org.jgroups.protocols.pbcast.NakAckHeader2;
 import org.jgroups.stack.Protocol;
@@ -27,7 +32,12 @@ public class TransferQueueBundler extends BaseBundler implements Runnable {
     protected Thread                 bundler_thread;
     protected volatile boolean       running=true;
     protected static final String    THREAD_NAME="TQ-Bundler";
-
+    
+    // CCS begin
+    private final AtomicInteger suppressedRetransmissions = new AtomicInteger();
+    private ScheduledExecutorService suppressedRetransmissionsLogger;
+    private Level suppressedRetransmissionsLevel;
+    // CCS end
 
     public TransferQueueBundler() {
     }
@@ -53,6 +63,33 @@ public class TransferQueueBundler extends BaseBundler implements Runnable {
                 tcp.setBufferedOutputStreamSize(new_size);
             }
         }
+        // CCS begin
+        CCSProperty.Listener updater = p -> {
+            synchronized (suppressedRetransmissions) {
+                suppressedRetransmissionsLevel = p.getLevel("suppress-bundler");
+                if (p.getBoolean("brief") && log.isEnabled(suppressedRetransmissionsLevel)) {
+                    suppressedRetransmissionsLogger = Executors.newScheduledThreadPool(1, r -> new Thread(r, "Bundler retransmit suppression logger"));
+                    int pp = p.getInt("brief", 10000);
+                    long period = pp < 100 ? pp*1000 : pp;  // user entered seconds by mistake
+                    suppressedRetransmissionsLogger.scheduleWithFixedDelay(() -> {
+                        int n = suppressedRetransmissions.getAndSet(0);
+                        if (n > 0) {
+                            log.out(suppressedRetransmissionsLevel, "Bundler-suppressed retransmissions in the last "+ (period/1000) +" seconds: "+ n +".");
+                        }
+                    }, period, period, TimeUnit.MILLISECONDS);
+                } else {
+                    if (suppressedRetransmissionsLogger != null) {
+                        suppressedRetransmissionsLogger.shutdown();
+                    }
+                }
+                suppressedRetransmissions.set(0);
+            }
+        };
+        Protocol.ccs_prop_retransmit.addListener(updater);
+        if (Protocol.ccs_prop_retransmit.getBoolean("brief")) {
+            updater.changed(Protocol.ccs_prop_retransmit);
+        }
+        // CCS end
     }
 
     public synchronized void start() {
@@ -130,9 +167,13 @@ public class TransferQueueBundler extends BaseBundler implements Runnable {
                 seqno = hdr.getSeqno();
                 Long prev = retransmissionsInQueue.get(seqno);
                 if (prev != null && now - prev <= retransmissionsInQueueLIFE) {
-                    Level level = Protocol.ccs_prop_retransmit.getLevel("suppress-bundler");
-                    if (log.isEnabled(level)) {
-                        log.out(level, "Bundler: supressing retransmission " + seqno);
+                    if (suppressedRetransmissionsLogger == null) {
+                        Level level = Protocol.ccs_prop_retransmit.getLevel("suppress-bundler");
+                        if (log.isEnabled(level)) {
+                            log.out(level, "Bundler: supressing retransmission " + seqno);
+                        }
+                    } else {
+                        suppressedRetransmissions.incrementAndGet();
                     }
                     return; // dropping retransmission
                 }
